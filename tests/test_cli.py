@@ -71,6 +71,11 @@ class TestParser:
         assert "error" in capsys.readouterr().err
 
 
+def test_default_num_workers_uses_cpu_affinity(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {0, 1, 2}, raising=False)
+    assert default_num_workers() == 3
+
+
 def test_default_num_workers_without_affinity(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delattr(os, "sched_getaffinity", raising=False)
     monkeypatch.setattr(os, "cpu_count", lambda: 64)
@@ -127,6 +132,7 @@ def test_run_end_to_end(tiny_segmenter_dir: Path, tmp_path: Path, capsys: pytest
     out = capsys.readouterr().out
     assert code == 0, out
     assert "Recommended: batch_size=" in out
+    assert "no GPU is visible" in out.replace("\n", " ")
 
     (json_path,) = tmp_path.glob("*-cpu.json")
     data = json.loads(json_path.read_text())

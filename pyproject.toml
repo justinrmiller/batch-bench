@@ -35,7 +35,7 @@ xpu = [
 ]
 
 [project.scripts]
-batch-bench = "batch_bench.cli:main"
+batch-bench = "batch_bench.launcher:main"
 
 [dependency-groups]
 dev = [

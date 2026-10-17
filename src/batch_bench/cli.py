@@ -44,10 +44,9 @@ ALL_TASKS = "all"
 
 def default_num_workers() -> int:
     """Up to 8 DataLoader workers, bounded by the CPUs this process may use."""
-    try:
-        cpus = len(os.sched_getaffinity(0))
-    except AttributeError:  # macOS and Windows
-        cpus = os.cpu_count() or 1
+    # sched_getaffinity honours CPU pinning (taskset, containers) but is Linux-only.
+    affinity = getattr(os, "sched_getaffinity", None)
+    cpus = len(affinity(0)) if affinity is not None else os.cpu_count() or 1
     return max(1, min(8, cpus))
 
 
@@ -340,6 +339,12 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
         accelerator.set_memory_fraction(args.memory_fraction)
     info = accelerator.info()
     render_device(console, info)
+    if backend is Backend.CPU and args.device == "auto":
+        console.print(
+            f"[yellow]warning:[/yellow] no GPU is visible to this torch build ({torch.__version__}), "
+            "so the benchmark runs on the CPU. If you have a GPU, install its build: "
+            "uv sync --extra rocm | cuda | xpu | mps"
+        )
 
     settings = TrialSettings(
         mode=Mode(args.mode),

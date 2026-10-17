@@ -54,8 +54,18 @@ uv sync --extra rocm              # or cuda / xpu / mps / cpu
 uv run batch-bench devices        # confirm the GPU is visible and supported
 ```
 
-Once you've synced with an extra, a plain `uv run` leaves that torch build in
-place. To switch backends, run `uv sync --extra <other>` again.
+PyTorch is not a base dependency, because the right build depends on your
+GPU and uv has no "default extra". So:
+
+- **Always pass the extra to `uv sync`.** A plain `uv sync` installs no
+  PyTorch, and it *uninstalls* one that an earlier `uv sync --extra rocm`
+  installed. If that happens, `batch-bench` prints the install commands
+  instead of a traceback.
+- A plain `uv run` is safe. It never removes packages, so it leaves the
+  installed build in place.
+- To switch backends, run `uv sync --extra <other>`.
+- `make dev BACKEND=rocm` does the sync. The other `make` targets never
+  re-sync, so they can't swap the build.
 
 ## Usage
 
