@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# batch-bench
+# Benchmark output (batch-bench run --output-dir)
+results/
+
+# macOS
+.DS_Store

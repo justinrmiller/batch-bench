@@ -1,0 +1,158 @@
+[project]
+name = "batch-bench"
+version = "0.1.0"
+description = "Find the optimal DataLoader batch size for HuggingFace vision models on NVIDIA, AMD ROCm, Apple MPS and Intel XPU GPUs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.1",
+    "pillow>=11.0",
+    "rich>=14.0",
+    "scipy>=1.14",
+    "transformers>=5.0",
+]
+
+# One extra per PyTorch build; they are mutually exclusive (see tool.uv.conflicts).
+# timm (DETR's backbone) lives here rather than in `dependencies` because it
+# requires torch, which would otherwise pull PyPI's default CUDA build into
+# the base resolution. The triton packages are pinned to the matching index:
+# PyPI only has stale or missing builds of them.
+[project.optional-dependencies]
+cpu = ["timm>=1.0.15", "torch>=2.14.1", "torchvision>=0.29.1"]
+mps = ["timm>=1.0.15", "torch>=2.14.1", "torchvision>=0.29.1"]
+cuda = ["timm>=1.0.15", "torch>=2.14.1", "torchvision>=0.29.1"]
+rocm = [
+    "timm>=1.0.15",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
+    "triton-rocm>=3.8 ; sys_platform == 'linux'",
+]
+xpu = [
+    "timm>=1.0.15",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
+    "triton-xpu>=3.8 ; sys_platform == 'linux' or sys_platform == 'win32'",
+]
+
+[project.scripts]
+batch-bench = "batch_bench.cli:main"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.7",
+    "pytest>=9.1",
+    "pytest-cov>=7.1",
+    "ruff>=0.17",
+    "ty>=0.0.89",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "mps" },
+        { extra = "cuda" },
+        { extra = "rocm" },
+        { extra = "xpu" },
+    ],
+]
+
+# MPS reuses the CPU index: its macOS arm64 wheels are the same ones PyPI serves.
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cpu", extra = "mps" },
+    { index = "pytorch-cu130", extra = "cuda" },
+    { index = "pytorch-rocm", extra = "rocm" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cpu", extra = "mps" },
+    { index = "pytorch-cu130", extra = "cuda" },
+    { index = "pytorch-rocm", extra = "rocm" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+triton-rocm = [{ index = "pytorch-rocm", extra = "rocm" }]
+triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "ANN",  # type annotations
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "D",    # docstrings
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # naming
+    "PERF", # performance anti-patterns
+    "PT",   # pytest style
+    "PTH",  # prefer pathlib
+    "RUF",  # ruff-specific
+    "SIM",  # simplify
+    "UP",   # pyupgrade
+    "W",    # pycodestyle warnings
+]
+ignore = [
+    "D105", # magic methods are self-explanatory
+    "D107", # __init__ is documented in the class docstring
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "-m",
+    "not hub",
+    "--cov=batch_bench",
+    "--cov-branch",
+    "--cov-report=term-missing",
+    "--cov-fail-under=90",
+]
+markers = ["hub: downloads real checkpoints from the HuggingFace Hub (run with `-m hub`)"]
+filterwarnings = [
+    # Python 3.12+ warns on every DataLoader fork from a process with torch threads.
+    "ignore:This process .* is multi-threaded, use of fork:DeprecationWarning",
+]
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]

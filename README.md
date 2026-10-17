@@ -1,0 +1,233 @@
+# batch-bench
+
+Find the DataLoader batch size that gets the most images per second out of
+your GPU for HuggingFace object detection, image segmentation and embedding
+models. It supports NVIDIA (CUDA), AMD (ROCm, including the Radeon AI PRO
+R9700), Intel (XPU) and Apple Silicon (MPS).
+
+Each trial runs the whole pipeline a real job runs: JPEG decoding and the
+model's HuggingFace image processor in DataLoader worker processes, the copy
+to the device, then a forward pass (or forward, backward and optimizer step).
+For every batch size it reports:
+
+- end-to-end throughput,
+- device-only throughput,
+- step latency,
+- how long the GPU sat waiting for data,
+- peak device memory.
+
+Timing the model alone overstates the useful batch size whenever the CPU side
+can't keep up. This tool catches that case and tells you.
+
+## How the batch size is chosen
+
+1. **Sweep.** Batch sizes double (1, 2, 4, …) until a trial runs out of memory
+   or reaches `--max-batch-size`. Then up to `--refine-steps` bisection trials,
+   in multiples of 8, narrow in on the largest batch that fits.
+2. **Recommend.** The pick is the *smallest* batch within `--tolerance` (5%)
+   of the best end-to-end throughput whose peak memory stays under
+   `1 - --memory-headroom` (90%) of device memory. Past the knee of the curve,
+   bigger batches add latency and memory but no throughput. The headroom
+   leaves room for fragmentation and larger real-world inputs.
+3. **Diagnose.** If the device waited on the DataLoader for 15% or more of the
+   run, the report calls the run *input-bound*. A bigger batch won't help
+   there. More workers or cheaper preprocessing will. Pass several worker
+   counts (`--num-workers 4,8,12`) to sweep the batch-size × worker grid.
+
+## Install
+
+You need [uv](https://docs.astral.sh/uv/). Choose the extra that matches
+your hardware. The extras are mutually exclusive, and each one pulls torch
+from the matching PyTorch wheel index.
+
+| Hardware | Extra | PyTorch 2.14 build |
+| --- | --- | --- |
+| AMD Radeon / Instinct on Linux (e.g. Radeon AI PRO R9700) | `rocm` | ROCm 7.2 |
+| NVIDIA, Turing (RTX 20-series) or newer | `cuda` | CUDA 13.0 |
+| Intel Arc, Core Ultra iGPU, Data Center GPU Max | `xpu` | XPU |
+| Apple Silicon | `mps` | macOS arm64 |
+| No GPU (testing) | `cpu` | CPU only |
+
+```bash
+cd batch-bench
+uv sync --extra rocm              # or cuda / xpu / mps / cpu
+uv run batch-bench devices        # confirm the GPU is visible and supported
+```
+
+Once you've synced with an extra, a plain `uv run` leaves that torch build in
+place. To switch backends, run `uv sync --extra <other>` again.
+
+## Usage
+
+```bash
+# Default model for each task (DETR, SegFormer-B0, CLIP ViT-B/32)
+uv run batch-bench run
+
+# One task, larger sweep
+uv run batch-bench run -t embedding --max-batch-size 4096
+
+# Specific presets, training instead of inference
+uv run batch-bench run -m rtdetr-v2-r18 -m segformer-b5 --mode training
+
+# Any Hub checkpoint or local directory (task inferred from its config)
+uv run batch-bench run -m facebook/dinov2-large
+
+# Your own images, sweeping worker counts as well
+uv run batch-bench run -m mask2former-swin-tiny --image-dir ~/data/coco/val2017 --num-workers 4,8,12
+
+uv run batch-bench models         # list presets
+uv run batch-bench run --help     # all options
+```
+
+Results print as a table per model and are also written to
+`results/<timestamp>-<backend>.json` (full detail, device and environment
+info) and `.csv` (one row per trial).
+
+### Output columns
+
+| Column | Meaning |
+| --- | --- |
+| `img/s` | End-to-end images per second, including time spent waiting on the DataLoader. This is what a job actually gets. |
+| `Dev img/s` | Images per second from the median device step alone, i.e. the ceiling if data loading cost nothing. |
+| `p50 ms` / `p95 ms` | Device step time per batch: copy, forward, plus backward and optimizer step in training mode. |
+| `Wait` | Share of wall time spent blocked on the DataLoader. |
+| `Peak mem` | Peak memory held by the caching allocator, which is what runs out first. Also shown as a % of device memory. |
+
+### Key options
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `--device` | `auto` | `cuda`, `rocm`, `xpu`, `mps`, `cpu`. `auto` picks the first available. |
+| `--mode` | `inference` | `training` adds backward and an AdamW step. |
+| `--precision` | `auto` | Autocast dtype. `auto` = bf16 if supported, else fp16; fp32 on CPU. |
+| `--batch-sizes` | | Explicit list, e.g. `16,24,32,48`. Overrides the doubling sweep. |
+| `--min/--max-batch-size` | `1` / `1024` | Doubling-sweep bounds. |
+| `--num-workers` | min(8, CPUs) | One or more DataLoader worker counts. |
+| `--preprocess` | `batch` | Run the image processor per batch (`collate_fn`) or per sample (`__getitem__`). |
+| `--image-dir` / `--image-size` | synthetic 640x480 | Use your own images and optionally resize them first. |
+| `--memory-fraction` | | Cap the process at a fraction of device memory. |
+| `--compile` | off | Wrap the model in `torch.compile`, recompiling for each batch size. |
+| `--tolerance` / `--memory-headroom` | `0.05` / `0.10` | Rules for picking the recommendation. |
+
+## Model presets
+
+| Task | Presets (default first) |
+| --- | --- |
+| Object detection | `detr-resnet-50`, `rtdetr-v2-r18`, `rtdetr-r50`, `dfine-small`, `yolos-small` |
+| Image segmentation | `segformer-b0`, `segformer-b5`, `upernet-convnext-small`, `mask2former-swin-tiny` |
+| Embedding | `clip-vit-b32`, `clip-vit-l14`, `siglip2-base`, `dinov2-small`, `dinov2-base` |
+
+CLIP and SigLIP presets load the vision tower only. That's what an embedding
+job keeps on the GPU. Any other checkpoint loads with the class named in its
+config. A full `CLIPModel` still works and runs through `get_image_features`,
+but its text tower counts against memory. Gated checkpoints such as DINOv3
+need `HF_TOKEN`.
+
+## How it measures
+
+- **A fresh DataLoader per trial** with `drop_last=True`. Synthetic images are
+  smooth random JPEGs that get decoded for every sample, so the decode cost
+  is realistic without a dataset on disk.
+- **Warmup and measurement in whole worker bursts.** All workers start
+  together and each builds a full batch, so an input-bound loader delivers
+  batches in bursts of `num_workers`. Warmup and measured batch counts round
+  up to whole bursts. That drains the start-up burst and stops a partial
+  burst from skewing throughput.
+- **Every step synchronizes the device**, so latency is real device time,
+  not kernel-launch time. The first steps of a trial also absorb cuDNN/MIOpen
+  autotuning and `torch.compile`.
+- **Mixed precision via autocast**, with float32 weights.
+- **Training mode** runs a real backward and AdamW step, using `lr=0` so
+  weights stay identical across trials. The loss is a surrogate: the sum of
+  the means of every floating-point output, so every head is exercised.
+  Memory and compute match real training except for task-specific loss work,
+  such as DETR's Hungarian matching (mostly CPU) and label loading.
+- **Out-of-memory errors are caught per trial.** That covers
+  `torch.OutOfMemoryError` plus the message-only errors from HIP, MIOpen,
+  cuDNN/cuBLAS, MPS and Level Zero. The allocator cache is emptied before
+  the next trial.
+- **Peak memory** comes from the caching allocator's counters on CUDA, ROCm
+  and XPU. MPS has no peak counters, so `driver_allocated_memory()` is polled
+  after every step. That's an approximation, and the budget it's compared to
+  is Metal's recommended working set.
+
+## Backend notes
+
+### AMD Radeon AI PRO R9700 (ROCm)
+
+- The R9700 is RDNA 4 (`gfx1201`) with 32 GB. You need a Linux kernel / amdgpu
+  driver new enough for RDNA 4, and your user must be in the `render` and
+  `video` groups. The PyTorch wheel bundles the ROCm user-space libraries.
+- `batch-bench devices` should report `arch=gfx1201` with no warning. A
+  warning means the installed wheel has no `gfx1201` kernels. In that case,
+  install AMD's PyTorch wheels from repo.radeon.com.
+- Don't set `HSA_OVERRIDE_GFX_VERSION`; that's for GPUs ROCm doesn't support,
+  and gfx1201 is supported.
+- ROCm runs through `torch.cuda`, so `--device rocm` or `auto` both work.
+  `HIP_VISIBLE_DEVICES` picks the GPU.
+- MIOpen searches for convolution kernels the first time it sees a shape, and
+  every batch size is a new shape. Warmup absorbs this, so the numbers are
+  unaffected, but the first sweep takes longer. Results are cached for later
+  runs. `MIOPEN_FIND_MODE=FAST` or `--no-cudnn-benchmark` shortens the search.
+- `PYTORCH_TUNABLEOP_ENABLED=1` tunes GEMMs and can raise throughput. Expect
+  slower first trials while it tunes.
+
+### NVIDIA (CUDA)
+
+- The `cuda` extra uses CUDA 13.0 wheels, which dropped Maxwell, Pascal and
+  Volta. For those GPUs, change the `pytorch-cu130` index URL in
+  `pyproject.toml` to `.../whl/cu126` and re-lock.
+- `batch-bench devices` warns if the wheel has no kernels for your GPU.
+
+### Intel (XPU)
+
+- This uses PyTorch's native XPU backend; IPEX isn't needed. Install Intel's
+  GPU driver (Level Zero runtime) first.
+- Some Intel GPUs reject any single allocation over 4 GB. That caps the batch
+  size just like running out of memory, so it's reported as `oom`.
+
+### Apple Silicon (MPS)
+
+- MPS uses unified memory. By default PyTorch lets MPS allocate up to 1.7× the
+  recommended working set, and it swaps instead of failing. Set
+  `PYTORCH_MPS_HIGH_WATERMARK_RATIO=1.0` to make OOM trigger at the
+  recommended working set. Either way, the headroom rule keeps the
+  recommendation inside it.
+- Pinned memory isn't supported on MPS. DataLoader workers start with
+  `spawn` on macOS, which is slower to start, but warmup covers it.
+
+## Limitations
+
+- One GPU per run; no DDP.
+- Preprocessing runs on the CPU in DataLoader workers. If a run is
+  input-bound, GPU-side preprocessing (not implemented) is the next lever.
+- The recommendation holds for the pipeline measured. Point `--image-dir` at
+  your real data so decode cost and image sizes match production.
+
+## Development
+
+```bash
+make dev          # uv sync --extra cpu (BACKEND=rocm etc. to test on a GPU)
+make check        # ruff check + format check, ty, pytest with coverage
+make pre-commit   # git hooks: ruff, ty, uv lock --check on commit; pytest on push
+make test-hub     # every preset against real Hub checkpoints (downloads ~6 GB)
+```
+
+The unit tests need no GPU and no network. Models are tiny, randomly
+initialized checkpoints saved to temp directories. The CUDA, ROCm, XPU and
+MPS code paths run against fake `torch.cuda` / `torch.xpu` / `torch.mps`
+namespaces. Coverage must stay at or above 90% (branch coverage included).
+CI (`.github/workflows/batch-bench.yml`) runs everything on Linux with the
+`cpu` extra and on macOS with the `mps` extra.
+
+```
+src/batch_bench/
+  devices.py   backend detection, Accelerator wrapper, OOM classification
+  models.py    presets, loading, per-task forward pass and surrogate loss
+  data.py      synthetic/folder image sources, preprocessing, DataLoader
+  runner.py    one timed trial (batch size × workers)
+  sweep.py     doubling + bisection search
+  analysis.py  recommendation and diagnostics
+  report.py    console tables, JSON and CSV
+  cli.py       batch-bench run | devices | models
+```
