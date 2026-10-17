@@ -74,13 +74,15 @@ class TestParser:
 
 def test_default_num_workers_uses_cpu_affinity(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {0, 1, 2}, raising=False)
-    assert default_num_workers() == 3
+    assert default_num_workers() == 2
 
 
 def test_default_num_workers_without_affinity(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delattr(os, "sched_getaffinity", raising=False)
     monkeypatch.setattr(os, "cpu_count", lambda: 64)
-    assert default_num_workers() == 8
+    assert default_num_workers() == 63  # no upper cap
+    monkeypatch.setattr(os, "cpu_count", lambda: 1)
+    assert default_num_workers() == 1  # never zero: 0 would preprocess in the main process
     monkeypatch.setattr(os, "cpu_count", lambda: None)
     assert default_num_workers() == 1
 

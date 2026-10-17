@@ -112,7 +112,7 @@ info) and `.csv` (one row per trial).
 | `--precision` | `auto` | Autocast dtype. `auto` = bf16 if supported, else fp16; fp32 on CPU. |
 | `--batch-sizes` | | Explicit list, e.g. `16,24,32,48`. Overrides the doubling sweep. |
 | `--min/--max-batch-size` | `1` / `1024` | Doubling-sweep bounds. |
-| `--num-workers` | min(8, CPUs) | One or more DataLoader worker counts. |
+| `--num-workers` | CPUs − 1 (min 1) | One or more DataLoader worker counts. |
 | `--preprocess` | `batch` | Run the image processor per batch (`collate_fn`) or per sample (`__getitem__`). |
 | `--image-dir` / `--image-size` | synthetic 640x480 | Use your own images and optionally resize them first. |
 | `--memory-fraction` | 1.0 on MPS | Cap the process at a fraction of device memory. |

@@ -43,11 +43,11 @@ ALL_TASKS = "all"
 
 
 def default_num_workers() -> int:
-    """Up to 8 DataLoader workers, bounded by the CPUs this process may use."""
+    """One DataLoader worker per usable CPU, minus one left for the main process (at least 1)."""
     # sched_getaffinity honours CPU pinning (taskset, containers) but is Linux-only.
     affinity = getattr(os, "sched_getaffinity", None)
     cpus = len(affinity(0)) if affinity is not None else os.cpu_count() or 1
-    return max(1, min(8, cpus))
+    return max(1, cpus - 1)
 
 
 def default_memory_fraction(backend: Backend, requested: float | None, environ: Mapping[str, str]) -> float | None:
