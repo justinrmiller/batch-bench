@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import functools
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -48,6 +48,21 @@ def default_num_workers() -> int:
     affinity = getattr(os, "sched_getaffinity", None)
     cpus = len(affinity(0)) if affinity is not None else os.cpu_count() or 1
     return max(1, min(8, cpus))
+
+
+def default_memory_fraction(backend: Backend, requested: float | None, environ: Mapping[str, str]) -> float | None:
+    """The per-process memory cap to apply, if any.
+
+    MPS lets a process allocate 1.7x Metal's recommended working set by
+    default, which is past physical RAM on most Macs. An oversized batch then
+    swaps the whole system instead of raising OOM, so MPS is capped at 1.0
+    unless the user chose a fraction or set PYTORCH_MPS_HIGH_WATERMARK_RATIO.
+    """
+    if requested is not None:
+        return requested
+    if backend is Backend.MPS and "PYTORCH_MPS_HIGH_WATERMARK_RATIO" not in environ:
+        return 1.0
+    return None
 
 
 def _positive_int(text: str) -> int:
@@ -335,8 +350,9 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
         raise BackendUnavailableError(f"{backend} device {args.device_index} does not exist")
     accelerator = Accelerator(backend, args.device_index)
     accelerator.activate()
-    if args.memory_fraction is not None:
-        accelerator.set_memory_fraction(args.memory_fraction)
+    memory_fraction = default_memory_fraction(backend, args.memory_fraction, os.environ)
+    if memory_fraction is not None:
+        accelerator.set_memory_fraction(memory_fraction)
     info = accelerator.info()
     render_device(console, info)
     if backend is Backend.CPU and args.device == "auto":
@@ -379,7 +395,7 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
         **asdict(plan),
         "image_source": str(args.image_dir) if args.image_dir else "synthetic",
         "image_size": list(args.image_size or DEFAULT_IMAGE_SIZE) if args.image_dir is None else args.image_size,
-        "memory_fraction": args.memory_fraction,
+        "memory_fraction": memory_fraction,
     }
     run_report = RunReport(device=info, settings=recorded)
     exit_code = 0

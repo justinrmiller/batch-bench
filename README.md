@@ -115,7 +115,7 @@ info) and `.csv` (one row per trial).
 | `--num-workers` | min(8, CPUs) | One or more DataLoader worker counts. |
 | `--preprocess` | `batch` | Run the image processor per batch (`collate_fn`) or per sample (`__getitem__`). |
 | `--image-dir` / `--image-size` | synthetic 640x480 | Use your own images and optionally resize them first. |
-| `--memory-fraction` | | Cap the process at a fraction of device memory. |
+| `--memory-fraction` | 1.0 on MPS | Cap the process at a fraction of device memory. |
 | `--compile` | off | Wrap the model in `torch.compile`, recompiling for each batch size. |
 | `--tolerance` / `--memory-headroom` | `0.05` / `0.10` | Rules for picking the recommendation. |
 
@@ -198,13 +198,14 @@ need `HF_TOKEN`.
 
 ### Apple Silicon (MPS)
 
-- MPS uses unified memory. By default PyTorch lets MPS allocate up to 1.7× the
-  recommended working set, and it swaps instead of failing. Set
-  `PYTORCH_MPS_HIGH_WATERMARK_RATIO=1.0` to make OOM trigger at the
-  recommended working set. Either way, the headroom rule keeps the
-  recommendation inside it.
+- MPS uses unified memory. By default PyTorch lets it allocate up to 1.7× the
+  recommended working set, which is more than most Macs' RAM, so an oversized
+  batch makes the system swap instead of failing. batch-bench caps MPS at 1.0×
+  so the sweep gets a clean out-of-memory error. Override it with
+  `--memory-fraction` (up to 1.0) or `PYTORCH_MPS_HIGH_WATERMARK_RATIO`.
 - Pinned memory isn't supported on MPS. DataLoader workers start with
-  `spawn` on macOS, which is slower to start, but warmup covers it.
+  `spawn` on macOS, so each one re-imports torch and transformers. They start
+  in parallel, and warmup absorbs the delay.
 
 ## Limitations
 

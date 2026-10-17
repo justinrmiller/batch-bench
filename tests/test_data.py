@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,15 @@ class TestSyntheticImageSource:
         assert np.array_equal(first, same)
         assert not np.array_equal(first, other)
 
+    def test_pickles_as_a_small_recipe_that_rebuilds_the_same_pool(self):
+        source = SyntheticImageSource(pool_size=32)
+        payload = pickle.dumps(source)
+        # Must fit a pipe buffer, or spawned DataLoader workers start one at a time.
+        assert len(payload) < 4096
+        clone = pickle.loads(payload)
+        assert clone._jpegs == source._jpegs
+        assert (clone.size, len(clone)) == (source.size, 32)
+
     def test_pool_must_not_be_empty(self):
         with pytest.raises(ValueError, match="pool_size"):
             SyntheticImageSource(pool_size=0)
@@ -85,6 +95,14 @@ class TestFolderImageSource:
     def test_resize(self, image_dir: Path):
         source = FolderImageSource(image_dir, resize=(16, 16))
         assert {source.load(i).size for i in range(2)} == {(16, 16)}
+
+    def test_pickles_without_the_file_list(self, image_dir: Path):
+        source = FolderImageSource(image_dir, resize=(16, 16))
+        payload = pickle.dumps(source)
+        assert b"b.JPG" not in payload
+        clone = pickle.loads(payload)
+        assert clone.files == source.files
+        assert clone.resize == (16, 16)
 
     def test_empty_directory_is_an_error(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError, match="no images"):

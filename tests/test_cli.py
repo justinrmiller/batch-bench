@@ -13,6 +13,7 @@ import torch
 from batch_bench import cli
 from batch_bench.cli import build_parser, build_source, default_num_workers, main, select_models
 from batch_bench.data import FolderImageSource, SyntheticImageSource
+from batch_bench.devices import Backend
 from batch_bench.models import PRESETS, Task
 
 QUICK = ["--num-workers", "0", "--warmup-batches", "1", "--measure-batches", "2", "--image-size", "64x48"]
@@ -82,6 +83,19 @@ def test_default_num_workers_without_affinity(monkeypatch: pytest.MonkeyPatch):
     assert default_num_workers() == 8
     monkeypatch.setattr(os, "cpu_count", lambda: None)
     assert default_num_workers() == 1
+
+
+class TestDefaultMemoryFraction:
+    def test_mps_is_capped_at_the_recommended_working_set(self):
+        assert cli.default_memory_fraction(Backend.MPS, None, {}) == 1.0
+
+    def test_explicit_choices_win(self):
+        assert cli.default_memory_fraction(Backend.MPS, 0.5, {}) == 0.5
+        assert cli.default_memory_fraction(Backend.MPS, None, {"PYTORCH_MPS_HIGH_WATERMARK_RATIO": "1.4"}) is None
+
+    def test_other_backends_are_not_capped(self):
+        assert cli.default_memory_fraction(Backend.ROCM, None, {}) is None
+        assert cli.default_memory_fraction(Backend.CPU, None, {}) is None
 
 
 class TestSelectModels:

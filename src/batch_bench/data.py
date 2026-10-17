@@ -72,6 +72,32 @@ def _smooth_random_image(rng: np.random.Generator, size: ImageSize) -> Image.Ima
     return Image.fromarray(coarse).resize(size, Image.Resampling.BICUBIC)
 
 
+def _encode_pool(size: ImageSize, pool_size: int, seed: int, quality: int) -> list[bytes]:
+    rng = np.random.default_rng(seed)
+    jpegs: list[bytes] = []
+    for _ in range(pool_size):
+        buffer = io.BytesIO()
+        _smooth_random_image(rng, size).save(buffer, format="JPEG", quality=quality)
+        jpegs.append(buffer.getvalue())
+    return jpegs
+
+
+def _find_images(root: Path) -> list[Path]:
+    files = sorted(path for path in root.rglob("*") if path.suffix.lower() in IMAGE_EXTENSIONS and path.is_file())
+    if not files:
+        extensions = ", ".join(sorted(IMAGE_EXTENSIONS))
+        raise FileNotFoundError(f"no images ({extensions}) found under {root}")
+    return files
+
+
+# Image sources pickle as a recipe rather than their contents. Spawned
+# DataLoader workers (the default on macOS and Windows) receive the dataset
+# through a pipe. A payload larger than the pipe buffer (64 KiB) blocks the
+# parent until that worker has imported torch, so workers would start one at
+# a time: about 1.6 s each, on every trial. Forked workers (Linux) share memory
+# and never unpickle, so they are unaffected.
+
+
 class SyntheticImageSource:
     """A pool of random JPEGs that are decoded on every access.
 
@@ -95,12 +121,21 @@ class SyntheticImageSource:
         if pool_size < 1:
             raise ValueError("pool_size must be at least 1")
         self.size = size
-        rng = np.random.default_rng(seed)
-        self._jpegs: list[bytes] = []
-        for _ in range(pool_size):
-            buffer = io.BytesIO()
-            _smooth_random_image(rng, size).save(buffer, format="JPEG", quality=quality)
-            self._jpegs.append(buffer.getvalue())
+        self.pool_size = pool_size
+        self.seed = seed
+        self.quality = quality
+        self._jpegs = _encode_pool(size, pool_size, seed, quality)
+
+    def __getstate__(self) -> dict[str, Any]:
+        # The seed rebuilds a byte-identical pool, so ship only the recipe.
+        return {"size": self.size, "pool_size": self.pool_size, "seed": self.seed, "quality": self.quality}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.size = state["size"]
+        self.pool_size = state["pool_size"]
+        self.seed = state["seed"]
+        self.quality = state["quality"]
+        self._jpegs = _encode_pool(self.size, self.pool_size, self.seed, self.quality)
 
     def __len__(self) -> int:
         return len(self._jpegs)
@@ -126,12 +161,16 @@ class FolderImageSource:
     def __init__(self, root: Path, resize: ImageSize | None = None) -> None:
         self.root = root
         self.resize = resize
-        self.files: list[Path] = sorted(
-            path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
-        )
-        if not self.files:
-            extensions = ", ".join(sorted(IMAGE_EXTENSIONS))
-            raise FileNotFoundError(f"no images ({extensions}) found under {root}")
+        self.files = _find_images(root)
+
+    def __getstate__(self) -> dict[str, Any]:
+        # A large tree pickles to megabytes of paths; rescanning is cheaper.
+        return {"root": self.root, "resize": self.resize}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.root = state["root"]
+        self.resize = state["resize"]
+        self.files = _find_images(self.root)
 
     def __len__(self) -> int:
         return len(self.files)
