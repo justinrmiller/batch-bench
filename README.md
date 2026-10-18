@@ -5,6 +5,9 @@ your GPU for HuggingFace object detection, image segmentation and embedding
 models. It supports NVIDIA (CUDA), AMD (ROCm, including the Radeon AI PRO
 R9700), Intel (XPU) and Apple Silicon (MPS).
 
+**New here? Start with [QUICKSTART.md](QUICKSTART.md).** It takes you from
+install to a recommendation in a few commands. This README is the reference.
+
 Each trial runs the whole pipeline a real job runs: JPEG decoding and the
 model's HuggingFace image processor in DataLoader worker processes, the copy
 to the device, then a forward pass (or forward, backward and optimizer step).
@@ -19,6 +22,20 @@ For every batch size it reports:
 Timing the model alone overstates the useful batch size whenever the CPU side
 can't keep up. This tool catches that case and tells you.
 
+## Contents
+
+- [How the batch size is chosen](#how-the-batch-size-is-chosen)
+- [Install](#install)
+- [Usage](#usage)
+- [Reading the results](#reading-the-results)
+- [Options](#options)
+- [Model presets](#model-presets)
+- [How it measures](#how-it-measures)
+- [Backend notes](#backend-notes)
+- [Troubleshooting](#troubleshooting)
+- [Limitations](#limitations)
+- [Development](#development)
+
 ## How the batch size is chosen
 
 1. **Sweep.** Batch sizes double (1, 2, 4, …) until a trial runs out of memory
@@ -26,9 +43,12 @@ can't keep up. This tool catches that case and tells you.
    in multiples of 8, narrow in on the largest batch that fits.
 2. **Recommend.** The pick is the *smallest* batch within `--tolerance` (5%)
    of the best end-to-end throughput whose peak memory stays under
-   `1 - --memory-headroom` (90%) of device memory. Past the knee of the curve,
-   bigger batches add latency and memory but no throughput. The headroom
-   leaves room for fragmentation and larger real-world inputs.
+   `1 - --memory-headroom` (90%) of the *usable* memory. Past the knee of the
+   curve, bigger batches add latency and memory but no throughput. The
+   headroom leaves room for fragmentation and larger real-world inputs.
+   - Usable memory is the device total, scaled by `--memory-fraction` if you
+     set one, and no more than was free when the run started. Memory another
+     process holds, such as a desktop session on the same GPU, doesn't count.
 3. **Diagnose.** If the device waited on the DataLoader for 15% or more of the
    run, the report calls the run *input-bound*. A bigger batch won't help
    there. More workers or cheaper preprocessing will. Pass several worker
@@ -85,15 +105,36 @@ uv run batch-bench run -m facebook/dinov2-large
 # Your own images, sweeping worker counts as well
 uv run batch-bench run -m mask2former-swin-tiny --image-dir ~/data/coco/val2017 --num-workers 4,8,12
 
+# Only the sizes you care about
+uv run batch-bench run -m clip-vit-b32 --batch-sizes 128,192,256,384
+
 uv run batch-bench models         # list presets
-uv run batch-bench run --help     # all options
+uv run batch-bench devices        # list visible GPUs and build warnings
+uv run batch-bench run --help     # all options, with examples
 ```
 
-Results print as a table per model and are also written to
-`results/<timestamp>-<backend>.json` (full detail, device and environment
-info) and `.csv` (one row per trial).
+**Stopping early.** Ctrl-C ends the run but keeps what it has: the current
+model's finished trials are printed with a recommendation and saved, and the
+JSON gets `"interrupted": true`. Models that hadn't started are skipped.
 
-### Output columns
+**Exit status.** `0`: every model got a recommendation. `1`: at least one
+didn't (it failed to load, or no batch size completed). `2`: usage error.
+`130`: interrupted.
+
+### Output files
+
+Each run writes two files to `--output-dir` (default `results/`), named
+`<UTC timestamp>-<backend>`:
+
+- **`.json`**: everything. `device` holds name, memory, arch, runtime and
+  build warnings. `environment` holds Python, torch and transformers
+  versions. `settings` holds every option, including `memory_budget_bytes`.
+  `models[]` has `results` (one entry per trial) and `recommendation`, which
+  includes the notes. `interrupted` is set if you pressed Ctrl-C.
+- **`.csv`**: one row per trial, ready for a spreadsheet or pandas.
+  `recommended` marks the chosen row.
+
+## Reading the results
 
 | Column | Meaning |
 | --- | --- |
@@ -101,23 +142,82 @@ info) and `.csv` (one row per trial).
 | `Dev img/s` | Images per second from the median device step alone, i.e. the ceiling if data loading cost nothing. |
 | `p50 ms` / `p95 ms` | Device step time per batch: copy, forward, plus backward and optimizer step in training mode. |
 | `Wait` | Share of wall time spent blocked on the DataLoader. |
-| `Peak mem` | Peak memory held by the caching allocator, which is what runs out first. Also shown as a % of device memory. |
+| `Peak mem` | Peak memory held by the caching allocator, which is what runs out first, with its share of the usable memory. |
 
-### Key options
+Patterns worth recognising:
 
-| Option | Default | Purpose |
+- **`img/s` rises, then flattens.** That's normal. The recommendation sits
+  at the start of the flat part. Going further only costs memory and latency.
+- **`Dev img/s` is far above `img/s`, and `Wait` is high.** The GPU is
+  starved. Add workers (`--num-workers`), use faster storage or decoding, or
+  move preprocessing to the GPU. A bigger batch won't help.
+- **`p95` is well above `p50`.** Steps are uneven. Common causes are other
+  processes on the GPU, thermal or power throttling, or memory pressure near
+  the ceiling. Treat that batch size with suspicion.
+- **`img/s` drops at the largest sizes.** The allocator is fighting
+  fragmentation, or (on MPS) the system is under memory pressure. Stay below
+  that point.
+- **Notes under the table** flag runs that were input-bound, recommendations
+  that skipped a faster run because of the memory headroom, and sweeps that
+  never hit out-of-memory (the ceiling is higher than you tested).
+
+## Options
+
+`batch-bench run --help` prints the same list with defaults and examples.
+
+**Models**
+
+| Option | Default | Meaning |
 | --- | --- | --- |
-| `--device` | `auto` | `cuda`, `rocm`, `xpu`, `mps`, `cpu`. `auto` picks the first available. |
+| `-m, --model` | | Preset name, Hub id or local directory. Repeatable. |
+| `-t, --task` | | `object-detection`, `image-segmentation`, `embedding` or `all`. Without `--model`, runs each task's default preset. With `--model`, sets the task for checkpoints whose config doesn't reveal it. Repeatable. |
+| `--revision` | | Hub branch, tag or commit. |
+
+With neither `-m` nor `-t`, the default preset of every task runs.
+
+**Device**
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--device` | `auto` | `cuda`, `rocm`, `xpu`, `mps` or `cpu`. `auto` picks the first visible GPU, else the CPU, and warns when it falls back. |
+| `--device-index` | `0` | Which GPU, on multi-GPU machines. |
+| `--precision` | `auto` | Autocast dtype. `auto` is bf16 where supported, otherwise fp16, and fp32 on CPU. |
 | `--mode` | `inference` | `training` adds backward and an AdamW step. |
-| `--precision` | `auto` | Autocast dtype. `auto` = bf16 if supported, else fp16; fp32 on CPU. |
-| `--batch-sizes` | | Explicit list, e.g. `16,24,32,48`. Overrides the doubling sweep. |
-| `--min/--max-batch-size` | `1` / `1024` | Doubling-sweep bounds. |
-| `--num-workers` | CPUs − 1 (min 1) | One or more DataLoader worker counts. |
-| `--preprocess` | `batch` | Run the image processor per batch (`collate_fn`) or per sample (`__getitem__`). |
-| `--image-dir` / `--image-size` | synthetic 640x480 | Use your own images and optionally resize them first. |
-| `--memory-fraction` | 1.0 on MPS | Cap the process at a fraction of device memory. |
+| `--memory-fraction` | none; `1.0` on MPS | Cap the process at this fraction of device memory. |
 | `--compile` | off | Wrap the model in `torch.compile`, recompiling for each batch size. |
-| `--tolerance` / `--memory-headroom` | `0.05` / `0.10` | Rules for picking the recommendation. |
+| `--no-cudnn-benchmark` | | Skip cuDNN/MIOpen autotuning. Shortens the first trials on ROCm. |
+
+**Sweep**
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--batch-sizes` | | Explicit list, e.g. `16,24,32,48`. Overrides the doubling sweep. |
+| `--min-batch-size` / `--max-batch-size` | `1` / `1024` | Doubling-sweep bounds. |
+| `--refine-steps` | `3` | Bisection trials after the first out-of-memory. `0` turns them off. |
+| `--num-workers` | CPUs − 1 (min 1) | One or more DataLoader worker counts, e.g. `4,8,12`. |
+| `--warmup-batches` | `3` | Untimed batches per trial. With workers, rounded up to a multiple of the worker count. |
+| `--measure-batches` | `16` | Timed batches per trial. Rounded the same way. |
+| `--prefetch-factor` | `2` | Batches each worker prepares ahead. |
+| `--tolerance` | `0.05` | How far below peak throughput the recommendation may be. |
+| `--memory-headroom` | `0.10` | Share of usable memory the recommendation leaves free. |
+
+**Data**
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--image-dir` | synthetic | Benchmark on your images (`.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, recursive). |
+| `--image-size` | `640x480` | Size of synthetic images. With `--image-dir`, resize your images to it. |
+| `--preprocess` | `batch` | Run the image processor per batch (in `collate_fn`) or per sample (in `__getitem__`). |
+| `--no-pin-memory` | | Disable pinned host memory (CUDA, ROCm, XPU). |
+| `--mp-context` | platform default | Worker start method: `fork`, `spawn` or `forkserver`. |
+| `--seed` | `0` | Seed for the synthetic images. |
+
+**Output**
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--output-dir` | `results` | Where the JSON and CSV go. |
+| `--no-save` | | Print only; write no files. |
 
 ## Model presets
 
@@ -127,11 +227,15 @@ info) and `.csv` (one row per trial).
 | Image segmentation | `segformer-b0`, `segformer-b5`, `upernet-convnext-small`, `mask2former-swin-tiny` |
 | Embedding | `clip-vit-b32`, `clip-vit-l14`, `siglip2-base`, `dinov2-small`, `dinov2-base` |
 
-CLIP and SigLIP presets load the vision tower only. That's what an embedding
-job keeps on the GPU. Any other checkpoint loads with the class named in its
-config. A full `CLIPModel` still works and runs through `get_image_features`,
-but its text tower counts against memory. Gated checkpoints such as DINOv3
-need `HF_TOKEN`.
+`batch-bench models` lists them with Hub ids and descriptions.
+
+- **CLIP and SigLIP presets load the vision tower only.** That's what an
+  embedding job keeps on the GPU.
+- **Any other checkpoint loads with the class named in its config.** A full
+  `CLIPModel` still works and runs through `get_image_features`, but its text
+  tower counts against memory.
+- **Gated checkpoints** such as DINOv3 need `HF_TOKEN` (or
+  `uv run hf auth login`).
 
 ## How it measures
 
@@ -140,9 +244,10 @@ need `HF_TOKEN`.
   is realistic without a dataset on disk.
 - **Warmup and measurement in whole worker bursts.** All workers start
   together and each builds a full batch, so an input-bound loader delivers
-  batches in bursts of `num_workers`. Warmup and measured batch counts round
-  up to whole bursts. That drains the start-up burst and stops a partial
-  burst from skewing throughput.
+  batches in bursts of `num_workers`. With any workers, warmup and measured
+  batch counts round up to whole bursts. That means:
+  - worker start-up is never timed, even with a single worker;
+  - a partial burst can't skew throughput.
 - **Every step synchronizes the device**, so latency is real device time,
   not kernel-launch time. The first steps of a trial also absorb cuDNN/MIOpen
   autotuning and `torch.compile`.
@@ -155,7 +260,8 @@ need `HF_TOKEN`.
 - **Out-of-memory errors are caught per trial.** That covers
   `torch.OutOfMemoryError` plus the message-only errors from HIP, MIOpen,
   cuDNN/cuBLAS, MPS and Level Zero. The allocator cache is emptied before
-  the next trial.
+  the next trial. Other errors are recorded as `error`, and the sweep
+  carries on.
 - **Peak memory** comes from the caching allocator's counters on CUDA, ROCm
   and XPU. MPS has no peak counters, so `driver_allocated_memory()` is polled
   after every step. That's an approximation, and the budget it's compared to
@@ -175,6 +281,9 @@ need `HF_TOKEN`.
   and gfx1201 is supported.
 - ROCm runs through `torch.cuda`, so `--device rocm` or `auto` both work.
   `HIP_VISIBLE_DEVICES` picks the GPU.
+- If the card also drives your displays, the desktop holds some of its
+  memory. The run warns when more than 10% is in use at start, and keeps the
+  headroom within what was free.
 - MIOpen searches for convolution kernels the first time it sees a shape, and
   every batch size is a new shape. Warmup absorbs this, so the numbers are
   unaffected, but the first sweep takes longer. Results are cached for later
@@ -184,9 +293,10 @@ need `HF_TOKEN`.
 
 ### NVIDIA (CUDA)
 
-- The `cuda` extra uses CUDA 13.0 wheels, which dropped Maxwell, Pascal and
-  Volta. For those GPUs, change the `pytorch-cu130` index URL in
-  `pyproject.toml` to `.../whl/cu126` and re-lock.
+- The `cuda` extra uses CUDA 13.0 wheels. Those need driver R580 or newer and
+  dropped Maxwell, Pascal and Volta. For older GPUs, change the
+  `pytorch-cu130` index URL in `pyproject.toml` to `.../whl/cu126` and
+  re-lock.
 - `batch-bench devices` warns if the wheel has no kernels for your GPU.
 
 ### Intel (XPU)
@@ -206,6 +316,22 @@ need `HF_TOKEN`.
 - Pinned memory isn't supported on MPS. DataLoader workers start with
   `spawn` on macOS, so each one re-imports torch and transformers. They start
   in parallel, and warmup absorbs the delay.
+- DataLoader workers share the same unified memory as the GPU. Very high
+  worker counts leave less room for batches.
+
+## Troubleshooting
+
+| Symptom | What to do |
+| --- | --- |
+| `error: PyTorch is not installed` | Run `uv sync --extra rocm` (or `cuda` / `xpu` / `mps` / `cpu`). A plain `uv sync` removes PyTorch. |
+| `warning: no GPU is visible … runs on the CPU` | Follow the hint printed with it. On ROCm, that usually means `/dev/kfd` permissions (the `render` and `video` groups) or `HIP_VISIBLE_DEVICES`. Run `batch-bench devices` to check. |
+| `warning: This torch build has no kernels for gfx1201` | The wheel doesn't target your GPU. Install AMD's wheels (ROCm), or a CUDA build that supports the card. |
+| `note: Input-bound` | The CPU side is the bottleneck. Try higher `--num-workers` counts, faster image storage, or smaller source images. |
+| The first trials on ROCm are very slow | That's MIOpen's kernel search, and it's cached afterwards. Use `MIOPEN_FIND_MODE=FAST` or `--no-cudnn-benchmark`. |
+| A Mac becomes sluggish at large batches | It's swapping. Make sure you haven't raised `PYTORCH_MPS_HIGH_WATERMARK_RATIO`, and lower `--max-batch-size` or `--num-workers`. |
+| `failed to load: … 401` / gated repo | Accept the model's license on the Hub, then set `HF_TOKEN` or run `uv run hf auth login`. |
+| `cannot infer the task for …` | Add `--task object-detection` (or `image-segmentation` / `embedding`). |
+| Trials show `error` | Read the message in the table. In `--mode training`, batch size 1 can fail in layers that need more than one value per channel. The sweep moves on to larger sizes. If every size fails, try `--precision fp32` to rule out a dtype problem. |
 
 ## Limitations
 
@@ -233,6 +359,8 @@ CI (`.github/workflows/batch-bench.yml`) runs everything on Linux with the
 
 ```
 src/batch_bench/
+  launcher.py  console entry point; explains a missing PyTorch install
+  cli.py       batch-bench run | devices | models
   devices.py   backend detection, Accelerator wrapper, OOM classification
   models.py    presets, loading, per-task forward pass and surrogate loss
   data.py      synthetic/folder image sources, preprocessing, DataLoader
@@ -240,5 +368,4 @@ src/batch_bench/
   sweep.py     doubling + bisection search
   analysis.py  recommendation and diagnostics
   report.py    console tables, JSON and CSV
-  cli.py       batch-bench run | devices | models
 ```

@@ -71,6 +71,7 @@ def test_settings_are_validated(kwargs: dict[str, object], message: str):
     [
         ((3, 16, 0), (3, 16)),
         ((3, 16, 1), (3, 16)),
+        ((0, 5, 1), (1, 5)),  # even one worker's start-up is never timed
         ((3, 16, 8), (8, 16)),
         ((3, 10, 4), (4, 12)),
         ((0, 1, 4), (4, 4)),

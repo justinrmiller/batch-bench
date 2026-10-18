@@ -130,11 +130,15 @@ def effective_batch_counts(warmup: int, measure: int, num_workers: int) -> tuple
 
     Each worker builds a whole batch, and all workers start together, so an
     input-bound loader delivers batches in bursts of ``num_workers``. Warming
-    up for at least one burst drains the start-up burst, and measuring whole
-    bursts avoids over- or under-counting a partial one, which would otherwise
-    skew throughput by up to ``num_workers / measure``.
+    up for at least one burst drains the start-up burst (and keeps worker
+    start-up out of the timings, even with a single worker), and measuring
+    whole bursts avoids over- or under-counting a partial one, which would
+    otherwise skew throughput by up to ``num_workers / measure``.
+
+    With ``num_workers=0`` the main process loads data, nothing starts up,
+    and the counts are used as given.
     """
-    if num_workers <= 1:
+    if num_workers == 0:
         return warmup, measure
 
     def round_up(count: int) -> int:

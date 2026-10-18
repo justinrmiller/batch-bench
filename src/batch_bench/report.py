@@ -1,4 +1,10 @@
-"""Console tables and JSON/CSV reports."""
+"""Console tables and JSON/CSV reports.
+
+Text that comes from outside this package (error messages, model ids, device
+names, paths) goes through :func:`rich.markup.escape` before printing. Rich
+would otherwise read ``[...]`` in it as markup, dropping the text or raising
+``MarkupError`` mid-run.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ from typing import Any
 import torch
 import transformers
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from batch_bench import __version__
@@ -99,11 +106,14 @@ class RunReport:
     settings: dict[str, Any]
     models: list[ModelReport] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # True when Ctrl-C stopped the run; the report then holds the trials that finished.
+    interrupted: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-friendly representation."""
         return {
             "created_at": self.created_at.isoformat(),
+            "interrupted": self.interrupted,
             "batch_bench_version": __version__,
             "environment": environment_info(),
             "device": self.device.to_dict(),
@@ -124,7 +134,7 @@ def environment_info() -> dict[str, str]:
 
 def render_device(console: Console, info: DeviceInfo) -> None:
     """Print a short description of the device."""
-    details = [f"[bold]{info.name}[/bold]", f"backend={info.backend}"]
+    details = [f"[bold]{escape(info.name)}[/bold]", f"backend={info.backend}"]
     if info.backend.device_type != "cpu":
         details.append(f"index={info.index}")
     if info.total_memory_bytes is not None:
@@ -132,10 +142,10 @@ def render_device(console: Console, info: DeviceInfo) -> None:
     if info.arch:
         details.append(f"arch={info.arch}")
     if info.runtime:
-        details.append(info.runtime)
+        details.append(escape(info.runtime))
     console.print("Device: " + "  ".join(details))
     for warning in info.warnings:
-        console.print(f"[yellow]warning:[/yellow] {warning}")
+        console.print(f"[yellow]warning:[/yellow] {escape(warning)}")
 
 
 def render_trial(console: Console, result: TrialResult) -> None:
@@ -150,14 +160,18 @@ def render_trial(console: Console, result: TrialResult) -> None:
             f"  peak {format_bytes(result.peak_reserved_bytes)}"
         )
     elif result.error:
-        line += f"  {result.error}"
+        line += f"  {escape(result.error)}"
     console.print(line, highlight=False)
 
 
-def render_model(console: Console, report: ModelReport, total_memory_bytes: int | None) -> None:
-    """Print the results table and recommendation for one model."""
+def render_model(console: Console, report: ModelReport, memory_budget_bytes: int | None) -> None:
+    """Print the results table and recommendation for one model.
+
+    ``Peak mem`` is shown as a share of ``memory_budget_bytes``: the memory
+    this process could actually use, the same figure the headroom rule uses.
+    """
     rec = report.recommendation
-    title = f"{report.spec.name} ({report.spec.task}, {report.spec.model_id})"
+    title = escape(f"{report.spec.name} ({report.spec.task}, {report.spec.model_id})")
     table = Table(title=title, title_justify="left", header_style="bold")
     for column in ("Batch", "Workers", "Status", "img/s", "Dev img/s", "p50 ms", "p95 ms", "Wait"):
         table.add_column(column, justify="right", no_wrap=True)
@@ -166,8 +180,8 @@ def render_model(console: Console, report: ModelReport, total_memory_bytes: int 
     for result in sorted(report.results, key=lambda r: (r.num_workers, r.batch_size)):
         style = _STATUS_STYLE[result.status]
         peak = format_bytes(result.peak_reserved_bytes)
-        if total_memory_bytes and result.peak_reserved_bytes is not None:
-            peak += f" ({result.peak_reserved_bytes / total_memory_bytes:.0%})"
+        if memory_budget_bytes and result.peak_reserved_bytes is not None:
+            peak += f" ({result.peak_reserved_bytes / memory_budget_bytes:.0%})"
         marks = []
         if rec is not None and result is rec.recommended:
             marks.append("[bold green]recommended[/bold green]")
@@ -187,7 +201,7 @@ def render_model(console: Console, report: ModelReport, total_memory_bytes: int 
         )
     console.print(table)
     if report.error:
-        console.print(f"[red]error:[/red] {report.error}")
+        console.print(f"[red]error:[/red] {escape(report.error)}")
     if rec is None:
         if not report.error:
             console.print("[red]No batch size completed; nothing to recommend.[/red]")
@@ -200,7 +214,7 @@ def render_model(console: Console, report: ModelReport, total_memory_bytes: int 
     oom = f", first OOM at {rec.first_oom}" if rec.first_oom is not None else ""
     console.print(f"Largest batch that fit: {rec.largest_fit}{oom}")
     for note in rec.notes:
-        console.print(f"[yellow]note:[/yellow] {note}")
+        console.print(f"[yellow]note:[/yellow] {escape(note)}")
 
 
 def csv_rows(report: RunReport) -> list[dict[str, Any]]:

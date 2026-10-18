@@ -13,9 +13,10 @@ import torch
 from batch_bench import cli
 from batch_bench.cli import build_parser, build_source, default_num_workers, main, select_models
 from batch_bench.data import FolderImageSource, SyntheticImageSource
-from batch_bench.devices import Backend
+from batch_bench.devices import Accelerator, Backend
 from batch_bench.models import PRESETS, Task
 
+GIB = 1024**3
 QUICK = ["--num-workers", "0", "--warmup-batches", "1", "--measure-batches", "2", "--image-size", "64x48"]
 
 
@@ -43,6 +44,7 @@ class TestParser:
             ["run", "--batch-sizes", "8,16", "--num-workers", "0,4", "--image-size", "320x240"]
         )
         assert args.batch_sizes == [8, 16]
+        assert build_parser().parse_args(["run", "--num-workers", "4,8,4"]).num_workers == [4, 8]
         assert build_parser().parse_args(["run", "--tolerance", "0.1"]).tolerance == pytest.approx(0.1)
         assert args.num_workers == [0, 4]
         assert args.image_size == (320, 240)
@@ -85,6 +87,21 @@ def test_default_num_workers_without_affinity(monkeypatch: pytest.MonkeyPatch):
     assert default_num_workers() == 1  # never zero: 0 would preprocess in the main process
     monkeypatch.setattr(os, "cpu_count", lambda: None)
     assert default_num_workers() == 1
+
+
+class TestMemoryBudget:
+    def test_no_device_memory(self):
+        assert cli.memory_budget(None, None, None) is None
+
+    def test_whole_device_when_uncapped_and_idle(self):
+        assert cli.memory_budget(32 * GIB, None, None) == 32 * GIB
+
+    def test_fraction_caps_the_budget(self):
+        assert cli.memory_budget(32 * GIB, 0.5, 30 * GIB) == 16 * GIB
+
+    def test_memory_held_by_other_processes_is_excluded(self):
+        assert cli.memory_budget(32 * GIB, None, 20 * GIB) == 20 * GIB
+        assert cli.memory_budget(32 * GIB, 0.9, 20 * GIB) == 20 * GIB
 
 
 class TestDefaultMemoryFraction:
@@ -206,6 +223,62 @@ def test_run_reports_load_failures(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 def test_run_usage_errors(argv: list[str], message: str, capsys: pytest.CaptureFixture[str]):
     assert main(["run", "-m", "segformer-b0", "--no-save", *argv]) == 2
     assert message in capsys.readouterr().out.replace("\n", " ")
+
+
+def test_interrupt_keeps_finished_trials(
+    tiny_segmenter_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    real_sweep = cli.sweep_batch_sizes
+
+    def interrupted_sweep(trial, batch_sizes, *, refine_steps, on_result):
+        real_sweep(trial, batch_sizes[:1], refine_steps=0, on_result=on_result)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "sweep_batch_sizes", interrupted_sweep)
+    argv = ["run", "-m", str(tiny_segmenter_dir), "-m", "segformer-b0", "--batch-sizes", "1,2", *QUICK]
+    code = main([*argv, "--output-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert code == 130
+    assert "Interrupted: keeping the trials that finished" in out
+    assert "Recommended: batch_size=1" in out
+    (json_path,) = tmp_path.glob("*.json")
+    data = json.loads(json_path.read_text())
+    assert data["interrupted"] is True
+    (model,) = data["models"]  # the second model never started
+    assert [r["batch_size"] for r in model["results"]] == [1]
+    assert model["recommendation"]["recommended"]["batch_size"] == 1
+
+
+def test_busy_gpu_shrinks_the_memory_budget(
+    tiny_segmenter_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setattr(Accelerator, "total_memory", lambda self: 32 * GIB)
+    monkeypatch.setattr(Accelerator, "free_memory", lambda self: 20 * GIB)
+    code = main(["run", "-m", str(tiny_segmenter_dir), "--batch-sizes", "1", *QUICK, "--output-dir", str(tmp_path)])
+    out = capsys.readouterr().out.replace("\n", " ")
+    assert code == 0
+    assert "12.0 GiB of 32.0 GiB is already in use" in out
+    (json_path,) = tmp_path.glob("*.json")
+    assert json.loads(json_path.read_text())["settings"]["memory_budget_bytes"] == 20 * GIB
+
+
+def test_cpu_fallback_explains_an_invisible_gpu(
+    tiny_segmenter_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setattr(cli, "build_backend", lambda: Backend.ROCM)
+    assert main(["run", "-m", str(tiny_segmenter_dir), "--batch-sizes", "1", *QUICK, "--no-save"]) == 0
+    assert "no AMD GPU is visible" in capsys.readouterr().out.replace("\n", " ")
+
+
+def test_devices_explains_an_invisible_gpu(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    monkeypatch.setattr(cli, "build_backend", lambda: Backend.CUDA)
+    assert main(["devices"]) == 0
+    assert "no NVIDIA GPU is visible" in capsys.readouterr().out.replace("\n", " ")
+
+
+def test_errors_with_brackets_are_printed_verbatim(capsys: pytest.CaptureFixture[str]):
+    assert main(["run", "-m", "segformer-b0", "--no-save", "--image-dir", "missing-[/dir]"]) == 2
+    assert "missing-[/dir]" in capsys.readouterr().out
 
 
 def test_keyboard_interrupt_exits_130(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):

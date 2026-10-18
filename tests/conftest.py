@@ -164,6 +164,7 @@ class FakeDeviceModule:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
         self.allocated = 100
         self.reserved = 200
+        self.free = props.total_memory // 2
 
     def _record(self, name: str, *args: Any) -> None:
         self.calls.append((name, args))
@@ -197,6 +198,9 @@ class FakeDeviceModule:
 
     def is_bf16_supported(self) -> bool:
         return self.bf16
+
+    def mem_get_info(self, index: int) -> tuple[int, int]:
+        return self.free, self.props.total_memory
 
 
 class FakeMpsModule:

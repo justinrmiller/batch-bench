@@ -156,10 +156,11 @@ class TestCudaLikeAccelerator:
         assert accel.supports_pin_memory
         assert accel.supports_cudnn_benchmark
 
-    def test_peak_and_total_memory(self, make_device_module):
+    def test_peak_total_and_free_memory(self, make_device_module):
         accel = Accelerator(Backend.CUDA, module=make_device_module(total_memory=1234))
         assert accel.peak_memory() == devices.MemoryStats(allocated=100, reserved=200)
         assert accel.total_memory() == 1234
+        assert accel.free_memory() == 617
 
     def test_bf16_support_comes_from_the_backend(self, make_device_module):
         assert Accelerator(Backend.CUDA, module=make_device_module(bf16=True)).supports_bf16()
@@ -240,6 +241,9 @@ class TestMpsAccelerator:
 
 
 class TestCpuAccelerator:
+    def test_cpu_has_no_device_memory_figures(self, cpu: Accelerator):
+        assert cpu.free_memory() is None
+
     def test_cpu_has_no_device_memory(self, cpu: Accelerator):
         cpu.activate()
         cpu.synchronize()
@@ -282,3 +286,26 @@ def test_device_info_to_dict_is_json_friendly():
     assert data["backend"] == "rocm"
     assert data["compiled_archs"] == ["gfx1201"]
     assert data["warnings"] == ["w"]
+
+
+@pytest.mark.parametrize(
+    ("hip", "cuda", "xpu", "platform", "expected"),
+    [
+        ("7.2.26015", None, None, "linux", Backend.ROCM),
+        (None, "13.0", None, "linux", Backend.CUDA),
+        (None, None, "20260100", "linux", Backend.XPU),
+        (None, None, None, "darwin", Backend.MPS),
+        (None, None, None, "linux", Backend.CPU),
+    ],
+)
+def test_build_backend(monkeypatch: pytest.MonkeyPatch, hip, cuda, xpu, platform, expected):
+    monkeypatch.setattr(torch.version, "hip", hip)
+    monkeypatch.setattr(torch.version, "cuda", cuda)
+    monkeypatch.setattr(torch.version, "xpu", xpu, raising=False)
+    monkeypatch.setattr(devices.sys, "platform", platform)
+    assert devices.build_backend() is expected
+
+
+def test_every_gpu_backend_has_a_visibility_hint():
+    assert set(devices.VISIBILITY_HINTS) == set(Backend) - {Backend.CPU}
+    assert "render" in devices.VISIBILITY_HINTS[Backend.ROCM]

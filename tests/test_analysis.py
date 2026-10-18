@@ -96,7 +96,8 @@ def test_missing_oom_suggests_a_larger_sweep():
     assert rec is not None
     assert rec.first_oom is None
     assert rec.notes == (
-        "No out-of-memory up to batch 2; raise --max-batch-size to find the memory ceiling.",
+        "No out-of-memory up to batch 2; raise --max-batch-size (or list larger --batch-sizes) "
+        "to find the memory ceiling.",
         "Throughput was still highest at the largest batch tested.",
     )
 
@@ -104,7 +105,9 @@ def test_missing_oom_suggests_a_larger_sweep():
 def test_missing_oom_without_max_tested():
     rec = recommend([ok(2, 30), ok(4, 10)])
     assert rec is not None
-    assert rec.notes == ("No out-of-memory; raise --max-batch-size to find the memory ceiling.",)
+    assert rec.notes == (
+        "No out-of-memory; raise --max-batch-size (or list larger --batch-sizes) to find the memory ceiling.",
+    )
 
 
 @pytest.mark.parametrize(

@@ -137,6 +137,26 @@ def test_render_model_with_a_load_error():
     assert "No batch size completed" not in text
 
 
+def test_bracketed_text_is_printed_verbatim():
+    # Rich would drop "[see docs]" and raise MarkupError on "[/x]" if this text were parsed as markup.
+    console = recording_console()
+    render_trial(console, TrialResult(8, 4, TrialStatus.ERROR, error="RuntimeError: boom [see docs] [/x]"))
+    results = [ok(1, 10.0)]
+    report = ModelReport(
+        spec=PRESETS["dinov2-small"],
+        results=results,
+        recommendation=recommend(results),
+        error="failed to load: OSError: [Errno 2] /data/[raw]/model",
+    )
+    render_model(console, report, None)
+    render_device(console, replace(DEVICE, name="GPU [0]", warnings=("kernels for [/gfx1201] missing",)))
+    text = console.export_text()
+    assert "boom [see docs] [/x]" in text
+    assert "[Errno 2] /data/[raw]/model" in text
+    assert "GPU [0]" in text
+    assert "kernels for [/gfx1201] missing" in text
+
+
 def test_render_model_prints_notes():
     results = [ok(1, 10.0)]
     report = ModelReport(spec=PRESETS["dinov2-small"], results=results, recommendation=recommend(results))
@@ -153,6 +173,7 @@ def test_write_reports(tmp_path: Path, model_report: ModelReport):
     assert csv_path.name == "20261017-123005-rocm.csv"
 
     data = json.loads(json_path.read_text())
+    assert data["interrupted"] is False
     assert data["device"]["arch"] == "gfx1201"
     assert data["settings"] == {"mode": "inference"}
     assert data["environment"] == environment_info()

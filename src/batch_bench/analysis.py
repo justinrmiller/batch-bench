@@ -111,7 +111,10 @@ def recommend(
         )
     if first_oom is None:
         limit = f" up to batch {max_tested}" if max_tested is not None else ""
-        notes.append(f"No out-of-memory{limit}; raise --max-batch-size to find the memory ceiling.")
+        notes.append(
+            f"No out-of-memory{limit}; raise --max-batch-size (or list larger --batch-sizes) "
+            "to find the memory ceiling."
+        )
         if fastest.batch_size == largest_fit:
             notes.append("Throughput was still highest at the largest batch tested.")
     return Recommendation(

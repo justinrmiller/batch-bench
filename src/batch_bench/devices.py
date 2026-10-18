@@ -15,6 +15,7 @@ from __future__ import annotations
 import gc
 import platform
 import re
+import sys
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any
@@ -51,6 +52,24 @@ INSTALL_HINTS: dict[Backend, str] = {
     Backend.XPU: ("install the Intel build with `uv sync --extra xpu` and Intel's GPU driver (Level Zero runtime)"),
     Backend.MPS: "use an Apple Silicon Mac with macOS 14+ and `uv sync --extra mps`",
     Backend.CPU: "the CPU backend is always available",
+}
+
+# Why a GPU build might not see its GPU, shown when it falls back to the CPU.
+VISIBILITY_HINTS: dict[Backend, str] = {
+    Backend.ROCM: (
+        "The ROCm build is installed but no AMD GPU is visible. Check that your user can open /dev/kfd "
+        "and /dev/dri (the `render` and `video` groups), that the amdgpu driver supports the GPU, and "
+        "that HIP_VISIBLE_DEVICES / ROCR_VISIBLE_DEVICES are not hiding it."
+    ),
+    Backend.CUDA: (
+        "The CUDA build is installed but no NVIDIA GPU is visible. Check `nvidia-smi`, that the driver "
+        "is new enough for CUDA 13 (R580+), and that CUDA_VISIBLE_DEVICES is not hiding the GPU."
+    ),
+    Backend.XPU: (
+        "The XPU build is installed but no Intel GPU is visible. Check Intel's GPU driver (Level Zero "
+        "runtime) and that ZE_AFFINITY_MASK is not hiding the GPU."
+    ),
+    Backend.MPS: "MPS is unavailable: it needs an Apple Silicon Mac running macOS 14 or newer.",
 }
 
 # Lower-cased substrings that identify an out-of-memory failure. Only some
@@ -103,6 +122,19 @@ def available_backends() -> list[Backend]:
         found.append(Backend.MPS)
     found.append(Backend.CPU)
     return found
+
+
+def build_backend() -> Backend:
+    """The backend the installed torch build was made for, whether or not a device is visible."""
+    if torch.version.hip:
+        return Backend.ROCM
+    if torch.version.cuda:
+        return Backend.CUDA
+    if getattr(torch.version, "xpu", None):
+        return Backend.XPU
+    if sys.platform == "darwin":
+        return Backend.MPS
+    return Backend.CPU
 
 
 def resolve_backend(requested: str = "auto") -> Backend:
@@ -291,6 +323,16 @@ class Accelerator:
         if self.backend is Backend.MPS:
             return MemoryStats(allocated=None, reserved=self._sampled_reserved or None)
         return MemoryStats(allocated=None, reserved=None)
+
+    def free_memory(self) -> int | None:
+        """Device memory free right now, as the driver reports it; None on MPS and CPU.
+
+        Unlike :meth:`total_memory`, this excludes memory held by other
+        processes, such as a desktop session on the same GPU.
+        """
+        if self.has_peak_counters:
+            return int(self._module.mem_get_info(self.index)[0])
+        return None
 
     def total_memory(self) -> int | None:
         """Memory budget of the device in bytes (MPS: Metal's recommended working set)."""

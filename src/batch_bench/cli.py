@@ -13,6 +13,7 @@ from typing import Any
 import torch
 import transformers
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from batch_bench import __version__
@@ -27,19 +28,45 @@ from batch_bench.data import (
     parse_image_size,
 )
 from batch_bench.devices import (
+    VISIBILITY_HINTS,
     Accelerator,
     Backend,
     BackendUnavailableError,
     available_backends,
+    build_backend,
     device_count,
     resolve_backend,
 )
 from batch_bench.models import DEFAULT_PRESETS, PRESETS, ModelSpec, Task, load_model, resolve_model
-from batch_bench.report import ModelReport, RunReport, render_device, render_model, render_trial, write_reports
-from batch_bench.runner import Mode, Precision, TrialRunner, TrialSettings, resolve_precision
+from batch_bench.report import (
+    ModelReport,
+    RunReport,
+    format_bytes,
+    render_device,
+    render_model,
+    render_trial,
+    write_reports,
+)
+from batch_bench.runner import Mode, Precision, TrialResult, TrialRunner, TrialSettings, resolve_precision
 from batch_bench.sweep import doubling_batch_sizes, parse_int_list, sweep_batch_sizes
 
 ALL_TASKS = "all"
+
+RUN_EXAMPLES = """\
+examples:
+  batch-bench run                                    default model for each task
+  batch-bench run -t embedding --max-batch-size 4096
+  batch-bench run -m detr-resnet-50 --mode training
+  batch-bench run -m facebook/dinov2-large --image-dir ~/data/val --num-workers 4,8,12
+
+Ctrl-C stops early and still prints and saves the trials that finished.
+Exit status: 0 every model got a recommendation, 1 some did not, 2 usage
+error, 130 interrupted. See QUICKSTART.md and README.md for more.
+"""
+
+
+class _HelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
+    """Show defaults and keep the examples epilog's line breaks."""
 
 
 def default_num_workers() -> int:
@@ -63,6 +90,21 @@ def default_memory_fraction(backend: Backend, requested: float | None, environ: 
     if backend is Backend.MPS and "PYTORCH_MPS_HIGH_WATERMARK_RATIO" not in environ:
         return 1.0
     return None
+
+
+def memory_budget(total: int | None, fraction: float | None, free: int | None) -> int | None:
+    """Bytes this process can actually use; the headroom rule is applied to this.
+
+    That is the device total, scaled by any per-process cap
+    (``--memory-fraction``), and no more than was free before the first model
+    loaded. Memory held by other processes, such as a desktop session on the
+    same GPU, is not available to the benchmark. None when the device has no
+    memory figure (CPU).
+    """
+    if total is None:
+        return None
+    budget = int(total * fraction) if fraction is not None else total
+    return min(budget, free) if free is not None else budget
 
 
 def _positive_int(text: str) -> int:
@@ -114,9 +156,10 @@ def _batch_sizes(text: str) -> list[int]:
 
 def _worker_counts(text: str) -> list[int]:
     try:
-        return parse_int_list(text)
+        values = parse_int_list(text)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from None
+    return list(dict.fromkeys(values))  # drop repeats, keep order
 
 
 def _image_size(text: str) -> ImageSize:
@@ -131,6 +174,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="batch-bench",
         description="Find the optimal DataLoader batch size for HuggingFace vision models on your GPU.",
+        epilog="Start with `batch-bench devices`, then `batch-bench run`. See QUICKSTART.md.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -140,7 +184,9 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser(
         "run",
         help="sweep batch sizes and recommend one",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Sweep DataLoader batch sizes for one or more models and recommend one per model.",
+        epilog=RUN_EXAMPLES,
+        formatter_class=_HelpFormatter,
     )
     models = run.add_argument_group("models")
     models.add_argument(
@@ -162,7 +208,12 @@ def build_parser() -> argparse.ArgumentParser:
     models.add_argument("--revision", default=None, help="Hub revision (branch, tag or commit)")
 
     device = run.add_argument_group("device")
-    device.add_argument("--device", default="auto", choices=["auto", *Backend], help="backend to use")
+    device.add_argument(
+        "--device",
+        default="auto",
+        choices=["auto", *Backend],
+        help="backend to use; auto picks the first visible GPU, else the CPU",
+    )
     device.add_argument("--device-index", type=_non_negative_int, default=0, help="GPU ordinal")
     device.add_argument(
         "--precision",
@@ -175,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--memory-fraction",
         type=_memory_fraction,
         default=None,
-        help="cap the process at this fraction of device memory",
+        help="cap the process at this fraction of device memory (unset: no cap, except 1.0 on MPS)",
     )
     device.add_argument("--compile", action="store_true", help="wrap the model in torch.compile")
     device.add_argument(
@@ -205,8 +256,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=[default_num_workers()],
         help="DataLoader worker counts to try, comma-separated (e.g. 4,8,12)",
     )
-    sweep.add_argument("--warmup-batches", type=_non_negative_int, default=3, help="untimed batches per trial")
-    sweep.add_argument("--measure-batches", type=_positive_int, default=16, help="timed batches per trial")
+    sweep.add_argument(
+        "--warmup-batches",
+        type=_non_negative_int,
+        default=3,
+        help="untimed batches per trial; with workers, rounded up to a multiple of the worker count",
+    )
+    sweep.add_argument(
+        "--measure-batches",
+        type=_positive_int,
+        default=16,
+        help="timed batches per trial; with workers, rounded up to a multiple of the worker count",
+    )
     sweep.add_argument("--prefetch-factor", type=_positive_int, default=2, help="batches prefetched per worker")
     sweep.add_argument(
         "--tolerance",
@@ -218,7 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--memory-headroom",
         type=_fraction,
         default=0.10,
-        help="fraction of device memory to keep free in the recommendation",
+        help="fraction of the usable memory (see --memory-fraction) the recommendation leaves free",
     )
 
     data = run.add_argument_group("data")
@@ -232,8 +293,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--image-size",
         type=_image_size,
         default=None,
-        help=f"WIDTHxHEIGHT of synthetic images (default {DEFAULT_IMAGE_SIZE[0]}x{DEFAULT_IMAGE_SIZE[1]}); "
-        "with --image-dir, resize images to this size",
+        help=f"WIDTHxHEIGHT of the synthetic images, {DEFAULT_IMAGE_SIZE[0]}x{DEFAULT_IMAGE_SIZE[1]} if unset; "
+        "with --image-dir, resize your images to this size",
     )
     data.add_argument(
         "--preprocess",
@@ -246,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mp-context",
         default=None,
         choices=["fork", "spawn", "forkserver"],
-        help="how DataLoader workers start (default: the platform default)",
+        help="how DataLoader workers start; unset uses Python's platform default",
     )
     data.add_argument("--seed", type=int, default=0, help="seed for synthetic images")
 
@@ -300,47 +361,57 @@ class SweepPlan:
     refine_steps: int
     tolerance: float
     memory_headroom: float
+    memory_budget_bytes: int | None = None
 
 
 def benchmark_model(
-    spec: ModelSpec,
+    report: ModelReport,
     accelerator: Accelerator,
     source: ImageSource,
     settings: TrialSettings,
     plan: SweepPlan,
     console: Console,
     revision: str | None = None,
-) -> ModelReport:
-    """Load one model, sweep every worker count, and recommend a batch size."""
-    report = ModelReport(spec=spec)
-    console.print(f"\n[bold]{spec.name}[/bold]: loading {spec.model_id}")
+) -> None:
+    """Load ``report.spec``, sweep every worker count, and fill ``report`` in place.
+
+    Each trial is recorded as soon as it finishes, and the recommendation is
+    computed even if the sweep is interrupted, so a Ctrl-C keeps everything
+    measured up to that point.
+    """
+    spec = report.spec
+    console.print(f"\n[bold]{escape(spec.name)}[/bold]: loading {escape(spec.model_id)}")
     try:
         loaded = load_model(spec, revision=revision)
         runner = TrialRunner(loaded, accelerator, source, settings)
     except Exception as exc:  # network, gated repo, unsupported architecture, OOM on load
         report.error = f"failed to load: {type(exc).__name__}: {exc}"
-        console.print(f"[red]{report.error}[/red]")
-        return report
+        console.print(f"[red]{escape(report.error)}[/red]")
+        return
     report.parameters = loaded.num_parameters
+
+    def record(result: TrialResult) -> None:
+        report.results.append(result)
+        render_trial(console, result)
+
     try:
         for workers in plan.worker_counts:
-            report.results += sweep_batch_sizes(
+            sweep_batch_sizes(
                 functools.partial(runner, num_workers=workers),
                 plan.batch_sizes,
                 refine_steps=plan.refine_steps,
-                on_result=functools.partial(render_trial, console),
+                on_result=record,
             )
     finally:
         runner.close()
-    report.output_shape = runner.output_shape
-    report.recommendation = recommend(
-        report.results,
-        tolerance=plan.tolerance,
-        memory_headroom=plan.memory_headroom,
-        total_memory_bytes=accelerator.total_memory(),
-        max_tested=max(plan.batch_sizes),
-    )
-    return report
+        report.output_shape = runner.output_shape
+        report.recommendation = recommend(
+            report.results,
+            tolerance=plan.tolerance,
+            memory_headroom=plan.memory_headroom,
+            total_memory_bytes=plan.memory_budget_bytes,
+            max_tested=max(plan.batch_sizes),
+        )
 
 
 def run_command(args: argparse.Namespace, console: Console) -> int:
@@ -356,10 +427,23 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
     info = accelerator.info()
     render_device(console, info)
     if backend is Backend.CPU and args.device == "auto":
+        built_for = build_backend()
+        reason = (
+            VISIBILITY_HINTS[built_for]
+            if built_for is not Backend.CPU
+            else "If you have a GPU, install its build: uv sync --extra rocm | cuda | xpu | mps"
+        )
         console.print(
             f"[yellow]warning:[/yellow] no GPU is visible to this torch build ({torch.__version__}), "
-            "so the benchmark runs on the CPU. If you have a GPU, install its build: "
-            "uv sync --extra rocm | cuda | xpu | mps"
+            f"so the benchmark runs on the CPU. {escape(reason)}"
+        )
+    total, free = accelerator.total_memory(), accelerator.free_memory()
+    budget = memory_budget(total, memory_fraction, free)
+    if total and free is not None and free < 0.9 * total:
+        console.print(
+            f"[yellow]warning:[/yellow] {format_bytes(total - free)} of {format_bytes(total)} is already in use "
+            f"(other processes or the display). Recommendations keep their headroom within the "
+            f"{format_bytes(budget)} that is free."
         )
 
     settings = TrialSettings(
@@ -382,6 +466,7 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
         refine_steps=args.refine_steps,
         tolerance=args.tolerance,
         memory_headroom=args.memory_headroom,
+        memory_budget_bytes=budget,
     )
     specs = select_models(args.model, args.task, args.revision)
     source = build_source(args.image_dir, args.image_size, args.seed)
@@ -400,16 +485,23 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
     run_report = RunReport(device=info, settings=recorded)
     exit_code = 0
     for spec in specs:
-        model_report = benchmark_model(spec, accelerator, source, settings, plan, console, args.revision)
+        model_report = ModelReport(spec=spec)
         run_report.models.append(model_report)
-        render_model(console, model_report, accelerator.total_memory())
+        try:
+            benchmark_model(model_report, accelerator, source, settings, plan, console, args.revision)
+        except KeyboardInterrupt:
+            run_report.interrupted = True
+        render_model(console, model_report, budget)
         if model_report.recommendation is None:
             exit_code = 1
+        if run_report.interrupted:
+            console.print("[yellow]Interrupted: keeping the trials that finished.[/yellow]")
+            break
 
     if not args.no_save:
         json_path, csv_path = write_reports(run_report, args.output_dir)
-        console.print(f"\nWrote {json_path} and {csv_path}")
-    return exit_code
+        console.print(f"\nWrote {escape(str(json_path))} and {escape(str(csv_path))}")
+    return 130 if run_report.interrupted else exit_code
 
 
 def devices_command(console: Console) -> int:
@@ -417,9 +509,13 @@ def devices_command(console: Console) -> int:
     builds = {"cuda": torch.version.cuda, "hip": torch.version.hip, "xpu": getattr(torch.version, "xpu", None)}
     flavours = ", ".join(f"{name} {version}" for name, version in builds.items() if version)
     console.print(f"torch {torch.__version__} ({flavours or 'CPU-only build'})")
-    for backend in available_backends():
+    available = available_backends()
+    for backend in available:
         for index in range(device_count(backend)):
             render_device(console, Accelerator(backend, index).info())
+    built_for = build_backend()
+    if built_for not in available:
+        console.print(f"[yellow]warning:[/yellow] {escape(VISIBILITY_HINTS[built_for])}")
     return 0
 
 
@@ -455,7 +551,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return models_command(console)
         return run_command(args, console)
     except (BackendUnavailableError, ValueError, OSError) as exc:
-        console.print(f"[red]error:[/red] {exc}")
+        console.print(f"[red]error:[/red] {escape(str(exc))}")
         return 2
     except KeyboardInterrupt:
         console.print("[yellow]interrupted[/yellow]")
