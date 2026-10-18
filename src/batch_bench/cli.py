@@ -261,7 +261,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--warmup-batches",
         type=_non_negative_int,
         default=3,
-        help="untimed batches per trial; with workers, rounded up to a multiple of the worker count",
+        help="untimed batches per trial; with workers, (prefetch factor + 1) x workers + 1 more drain the queue",
     )
     sweep.add_argument(
         "--measure-batches",

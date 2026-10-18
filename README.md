@@ -199,9 +199,9 @@ With neither `-m` nor `-t`, the default preset of every task runs.
 | `--min-batch-size` / `--max-batch-size` | `1` / `1024` | Doubling-sweep bounds. |
 | `--refine-steps` | `3` | Bisection trials after the first out-of-memory. `0` turns them off. |
 | `--num-workers` | CPUs − 1 (min 1) | One or more DataLoader worker counts, e.g. `4,8,12`. |
-| `--warmup-batches` | `3` | Untimed batches per trial. With workers, rounded up to a multiple of the worker count. |
-| `--measure-batches` | `16` | Timed batches per trial. Rounded the same way. |
-| `--prefetch-factor` | `2` | Batches each worker prepares ahead. |
+| `--warmup-batches` | `3` | Untimed batches per trial. With workers, (prefetch factor + 1) × workers + 1 more follow; see [How it measures](#how-it-measures). |
+| `--measure-batches` | `16` | Timed batches per trial. With workers, rounded up to a multiple of the worker count. |
+| `--prefetch-factor` | `2` | Batches each worker prepares ahead. Also sets how long warmup takes to empty the queue. |
 | `--tolerance` | `0.05` | How far below peak throughput the recommendation may be. |
 | `--memory-headroom` | `0.10` | Share of usable memory the recommendation leaves free. |
 
@@ -254,12 +254,21 @@ With neither `-m` nor `-t`, the default preset of every task runs.
   image sizes give a new tensor shape on almost every batch. cuDNN and MIOpen
   would re-tune kernels for each new shape inside the timed batches, so
   `--image-dir` without `--image-size` runs without autotuning.
-- **Warmup and measurement in whole worker bursts.** All workers start
-  together and each builds a full batch, so an input-bound loader delivers
-  batches in bursts of `num_workers`. With any workers, warmup and measured
-  batch counts round up to whole bursts. That means:
-  - worker start-up is never timed, even with a single worker;
-  - a partial burst can't skew throughput.
+- **Warmup empties the prefetch queue.** While a warmup step is slow
+  (cuDNN/MIOpen autotuning, `torch.compile`, lazy initialization), the
+  workers keep going and fill the queue with up to
+  `prefetch_factor × num_workers` ready batches. Timing those would make an
+  input-bound loader look faster than it is, by about 2× with 8 workers at
+  the defaults. So with any workers, `--warmup-batches` is followed by
+  `(prefetch_factor + 1) × num_workers + 1` more untimed batches. They
+  consume whatever the queue holds, then one more round, so timing starts
+  from a steady flow; they also keep worker start-up out of the timings.
+  With 15 workers at the defaults that's 49 warmup batches. A lower
+  `--prefetch-factor` shortens it.
+- **Measurement in whole worker rounds.** Each worker builds a whole batch,
+  so an input-bound loader delivers batches in rounds of `num_workers`. With
+  any workers, the measured batch count rounds up to a whole number of
+  rounds; a partial round would skew throughput either way.
 - **Every step synchronizes the device**, so latency is real device time,
   not kernel-launch time. The first steps of a trial also absorb cuDNN/MIOpen
   autotuning and `torch.compile`.

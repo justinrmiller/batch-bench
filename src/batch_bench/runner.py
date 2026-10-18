@@ -125,26 +125,30 @@ class TrialResult:
         return data
 
 
-def effective_batch_counts(warmup: int, measure: int, num_workers: int) -> tuple[int, int]:
-    """Round warmup and measured batch counts up to multiples of ``num_workers``.
+def effective_batch_counts(warmup: int, measure: int, num_workers: int, prefetch_factor: int) -> tuple[int, int]:
+    """Untimed and timed batch counts that keep worker effects out of the timings.
 
-    Each worker builds a whole batch, and all workers start together, so an
-    input-bound loader delivers batches in bursts of ``num_workers``. Warming
-    up for at least one burst drains the start-up burst (and keeps worker
-    start-up out of the timings, even with a single worker), and measuring
-    whole bursts avoids over- or under-counting a partial one, which would
-    otherwise skew throughput by up to ``num_workers / measure``.
+    Warmup gets ``(prefetch_factor + 1) * num_workers + 1`` extra batches. A
+    slow warmup step (cuDNN/MIOpen autotuning, ``torch.compile``, lazy
+    initialization) lets the workers fill the prefetch queue, up to
+    ``prefetch_factor * num_workers`` batches. Timing those pre-built batches
+    would overstate an input-bound loader, by about 2x with 8 workers at the
+    defaults. The extras empty that queue and run one more round, so timing
+    starts from a steady flow wherever in the first ``warmup`` batches the
+    slow step fell. They also keep worker start-up out of the timings.
 
-    With ``num_workers=0`` the main process loads data, nothing starts up,
+    The measured count rounds up to a multiple of ``num_workers``. Each worker
+    builds a whole batch, so an input-bound loader delivers batches in rounds
+    of ``num_workers``, and only whole rounds time its true rate.
+
+    With ``num_workers=0`` the main process loads data, nothing is prefetched,
     and the counts are used as given.
     """
     if num_workers == 0:
         return warmup, measure
-
-    def round_up(count: int) -> int:
-        return max(num_workers, -(-count // num_workers) * num_workers)
-
-    return round_up(warmup), round_up(measure)
+    drain = (prefetch_factor + 1) * num_workers + 1
+    rounds = -(-measure // num_workers)
+    return warmup + drain, rounds * num_workers
 
 
 def _describe_error(exc: BaseException, limit: int = 300) -> str:
@@ -191,7 +195,7 @@ class TrialRunner:
         if batch_size < 1:
             raise ValueError("batch_size must be >= 1")
         warmup, measure = effective_batch_counts(
-            self.settings.warmup_batches, self.settings.measure_batches, num_workers
+            self.settings.warmup_batches, self.settings.measure_batches, num_workers, self.settings.prefetch_factor
         )
         accelerator = self.accelerator
         pin_memory = self.settings.pin_memory and accelerator.supports_pin_memory

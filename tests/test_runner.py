@@ -69,16 +69,19 @@ def test_settings_are_validated(kwargs: dict[str, object], message: str):
 @pytest.mark.parametrize(
     ("args", "expected"),
     [
-        ((3, 16, 0), (3, 16)),
-        ((3, 16, 1), (3, 16)),
-        ((0, 5, 1), (1, 5)),  # even one worker's start-up is never timed
-        ((3, 16, 8), (8, 16)),
-        ((3, 10, 4), (4, 12)),
-        ((0, 1, 4), (4, 4)),
-        ((9, 16, 8), (16, 16)),
+        ((3, 16, 0, 2), (3, 16)),  # no workers: nothing is prefetched
+        ((0, 5, 0, 2), (0, 5)),
+        ((3, 16, 1, 2), (7, 16)),  # 3 + (2 + 1) * 1 + 1
+        ((0, 5, 1, 2), (4, 5)),
+        ((3, 16, 8, 2), (28, 16)),  # 3 + (2 + 1) * 8 + 1
+        ((3, 10, 4, 2), (16, 12)),  # measured batches round up to whole rounds of 4
+        ((0, 1, 4, 1), (9, 4)),
+        ((9, 17, 8, 3), (42, 24)),
     ],
 )
-def test_effective_batch_counts_round_to_whole_worker_bursts(args: tuple[int, int, int], expected: tuple[int, int]):
+def test_effective_batch_counts_drain_the_prefetch_queue_and_time_whole_rounds(
+    args: tuple[int, int, int, int], expected: tuple[int, int]
+):
     assert effective_batch_counts(*args) == expected
 
 
@@ -114,7 +117,7 @@ class TestInference:
         settings = replace(FAST, preprocess=PreprocessMode.SAMPLE)
         result = TrialRunner(segmenter, cpu, tiny_source, settings)(batch_size=2, num_workers=2)
         assert result.ok
-        assert result.measured_batches == 2  # rounded up to whole bursts of 2 workers
+        assert result.measured_batches == 2  # already a whole round of 2 workers
 
     def test_spawned_workers_can_unpickle_the_pipeline(self, segmenter, cpu, tiny_source):
         settings = replace(FAST, mp_context="spawn")
