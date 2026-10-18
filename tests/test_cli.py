@@ -20,6 +20,11 @@ GIB = 1024**3
 QUICK = ["--num-workers", "0", "--warmup-batches", "1", "--measure-batches", "2", "--image-size", "64x48"]
 
 
+def unwrapped(text: str) -> str:
+    """Undo Rich's line wrapping, which leaves a trailing space before each break."""
+    return " ".join(text.split())
+
+
 @pytest.fixture(autouse=True)
 def cpu_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pretend no accelerator is present so runs are deterministic on any machine."""
@@ -165,7 +170,7 @@ def test_run_end_to_end(tiny_segmenter_dir: Path, tmp_path: Path, capsys: pytest
     out = capsys.readouterr().out
     assert code == 0, out
     assert "Recommended: batch_size=" in out
-    assert "no GPU is visible" in out.replace("\n", " ")
+    assert "no GPU is visible" in unwrapped(out)
 
     (json_path,) = tmp_path.glob("*-cpu0.json")
     data = json.loads(json_path.read_text())
@@ -222,7 +227,7 @@ def test_run_reports_load_failures(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 )
 def test_run_usage_errors(argv: list[str], message: str, capsys: pytest.CaptureFixture[str]):
     assert main(["run", "-m", "segformer-b0", "--no-save", *argv]) == 2
-    assert message in capsys.readouterr().out.replace("\n", " ")
+    assert message in unwrapped(capsys.readouterr().out)
 
 
 def test_interrupt_keeps_finished_trials(
@@ -255,7 +260,7 @@ def test_busy_gpu_shrinks_the_memory_budget(
     monkeypatch.setattr(Accelerator, "total_memory", lambda self: 32 * GIB)
     monkeypatch.setattr(Accelerator, "free_memory", lambda self: 20 * GIB)
     code = main(["run", "-m", str(tiny_segmenter_dir), "--batch-sizes", "1", *QUICK, "--output-dir", str(tmp_path)])
-    out = capsys.readouterr().out.replace("\n", " ")
+    out = unwrapped(capsys.readouterr().out)
     assert code == 0
     assert "12.0 GiB of 32.0 GiB is already in use" in out
     (json_path,) = tmp_path.glob("*.json")
@@ -277,12 +282,12 @@ def test_mixed_size_folders_turn_autotuning_off(
     common += ["--warmup-batches", "0", "--measure-batches", "1", "--image-dir", str(images)]
 
     assert main([*common, "--output-dir", str(tmp_path / "mixed")]) == 0
-    assert "autotuning is off" in capsys.readouterr().out.replace("\n", " ")
+    assert "autotuning is off" in unwrapped(capsys.readouterr().out)
     (mixed,) = (tmp_path / "mixed").glob("*.json")
     assert json.loads(mixed.read_text())["settings"]["cudnn_benchmark"] is False
 
     assert main([*common, "--image-size", "32x32", "--output-dir", str(tmp_path / "fixed")]) == 0
-    assert "autotuning is off" not in capsys.readouterr().out.replace("\n", " ")
+    assert "autotuning is off" not in unwrapped(capsys.readouterr().out)
     (fixed,) = (tmp_path / "fixed").glob("*.json")
     assert json.loads(fixed.read_text())["settings"]["cudnn_benchmark"] is True
 
@@ -292,13 +297,13 @@ def test_cpu_fallback_explains_an_invisible_gpu(
 ):
     monkeypatch.setattr(cli, "build_backend", lambda: Backend.ROCM)
     assert main(["run", "-m", str(tiny_segmenter_dir), "--batch-sizes", "1", *QUICK, "--no-save"]) == 0
-    assert "no AMD GPU is visible" in capsys.readouterr().out.replace("\n", " ")
+    assert "no AMD GPU is visible" in unwrapped(capsys.readouterr().out)
 
 
 def test_devices_explains_an_invisible_gpu(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     monkeypatch.setattr(cli, "build_backend", lambda: Backend.CUDA)
     assert main(["devices"]) == 0
-    assert "no NVIDIA GPU is visible" in capsys.readouterr().out.replace("\n", " ")
+    assert "no NVIDIA GPU is visible" in unwrapped(capsys.readouterr().out)
 
 
 def test_errors_with_brackets_are_printed_verbatim(capsys: pytest.CaptureFixture[str]):
