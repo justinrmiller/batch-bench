@@ -1,0 +1,248 @@
+{
+  "created_at": "2026-10-18T20:22:19.114577+00:00",
+  "interrupted": false,
+  "batch_bench_version": "0.1.0",
+  "environment": {
+    "python": "3.12.11",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "torch": "2.14.1",
+    "transformers": "5.20.1"
+  },
+  "device": {
+    "backend": "mps",
+    "index": 0,
+    "name": "Apple arm64 GPU",
+    "total_memory_bytes": 40200896512,
+    "arch": null,
+    "runtime": "macOS 27.0.1",
+    "compiled_archs": [],
+    "warnings": []
+  },
+  "settings": {
+    "mode": "inference",
+    "precision": "fp16",
+    "warmup_batches": 3,
+    "measure_batches": 16,
+    "preprocess": "batch",
+    "pin_memory": true,
+    "prefetch_factor": 2,
+    "compile_model": false,
+    "cudnn_benchmark": true,
+    "mp_context": null,
+    "batch_sizes": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      256,
+      512
+    ],
+    "worker_counts": [
+      1
+    ],
+    "refine_steps": 3,
+    "tolerance": 0.05,
+    "memory_headroom": 0.1,
+    "memory_budget_bytes": 40200896512,
+    "image_source": "synthetic",
+    "image_size": [
+      640,
+      480
+    ],
+    "memory_fraction": 1.0
+  },
+  "models": [
+    {
+      "name": "clip-vit-b32",
+      "model_id": "openai/clip-vit-base-patch32",
+      "task": "embedding",
+      "parameters": 87849216,
+      "output_shape": [
+        512
+      ],
+      "error": null,
+      "results": [
+        {
+          "batch_size": 1,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 104.65710513423942,
+          "compute_samples_per_second": 107.4089859323198,
+          "latency_p50_ms": 9.310207999078557,
+          "latency_p95_ms": 10.192698027822189,
+          "data_wait_fraction": 0.011333481045859604,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 384532480,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 2,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 174.58049026946478,
+          "compute_samples_per_second": 177.5088873709364,
+          "latency_p50_ms": 11.267041496466845,
+          "latency_p95_ms": 11.759250031900592,
+          "data_wait_fraction": 0.008581044797290658,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 384532480,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 4,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 242.25994428419963,
+          "compute_samples_per_second": 245.81568707823962,
+          "latency_p50_ms": 16.272354492684826,
+          "latency_p95_ms": 17.398198004229926,
+          "data_wait_fraction": 0.006745118643688949,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 384532480,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 8,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 332.7807569398596,
+          "compute_samples_per_second": 335.30382300550417,
+          "latency_p50_ms": 23.858958506025374,
+          "latency_p95_ms": 24.201521286158822,
+          "data_wait_fraction": 0.0068488613911272455,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 418086912,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 16,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 411.72267745590204,
+          "compute_samples_per_second": 413.710409488972,
+          "latency_p50_ms": 38.67439550231211,
+          "latency_p95_ms": 39.20245874905959,
+          "data_wait_fraction": 0.004481237811865637,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 451641344,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 32,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 465.64059005777386,
+          "compute_samples_per_second": 469.19244301901216,
+          "latency_p50_ms": 68.20229199365713,
+          "latency_p95_ms": 69.63443726999685,
+          "data_wait_fraction": 0.0033125744757110387,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 1458274304,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 64,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 479.2552448403635,
+          "compute_samples_per_second": 483.1569760510843,
+          "latency_p50_ms": 132.4621255043894,
+          "latency_p95_ms": 137.75325000460725,
+          "data_wait_fraction": 0.0025678252245519553,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 1458274304,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 128,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 506.73701868605593,
+          "compute_samples_per_second": 507.35579091136236,
+          "latency_p50_ms": 252.28843800141476,
+          "latency_p95_ms": 252.67717651149724,
+          "data_wait_fraction": 0.002246511654386368,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 1458274304,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 256,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 504.0554223897514,
+          "compute_samples_per_second": 512.2522416928962,
+          "latency_p50_ms": 499.7537915187422,
+          "latency_p95_ms": 535.4211347439559,
+          "data_wait_fraction": 0.0018456136863662612,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 1458274304,
+          "measured_batches": 16,
+          "error": null
+        },
+        {
+          "batch_size": 512,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 518.5609506344942,
+          "compute_samples_per_second": 519.5254669265763,
+          "latency_p50_ms": 985.5147294874769,
+          "latency_p95_ms": 990.6664894951973,
+          "data_wait_fraction": 0.001396037738433967,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 2532016128,
+          "measured_batches": 16,
+          "error": null
+        }
+      ],
+      "recommendation": {
+        "recommended": {
+          "batch_size": 128,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 506.73701868605593,
+          "compute_samples_per_second": 507.35579091136236,
+          "latency_p50_ms": 252.28843800141476,
+          "latency_p95_ms": 252.67717651149724,
+          "data_wait_fraction": 0.002246511654386368,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 1458274304,
+          "measured_batches": 16,
+          "error": null
+        },
+        "fastest": {
+          "batch_size": 512,
+          "num_workers": 1,
+          "status": "ok",
+          "samples_per_second": 518.5609506344942,
+          "compute_samples_per_second": 519.5254669265763,
+          "latency_p50_ms": 985.5147294874769,
+          "latency_p95_ms": 990.6664894951973,
+          "data_wait_fraction": 0.001396037738433967,
+          "peak_allocated_bytes": null,
+          "peak_reserved_bytes": 2532016128,
+          "measured_batches": 16,
+          "error": null
+        },
+        "largest_fit": 512,
+        "first_oom": null,
+        "notes": [
+          "No out-of-memory up to batch 512; raise --max-batch-size (or list larger --batch-sizes) to find the memory ceiling.",
+          "Throughput was still highest at the largest batch tested."
+        ]
+      }
+    }
+  ]
+}
