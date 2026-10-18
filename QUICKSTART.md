@@ -18,6 +18,7 @@ From a fresh checkout to a recommended batch size in about five minutes.
 ## 2. Install the PyTorch build for your GPU
 
 ```bash
+git clone https://github.com/justinrmiller/batch-bench.git
 cd batch-bench
 uv sync --extra rocm      # AMD on Linux, e.g. Radeon AI PRO R9700
 # uv sync --extra cuda    # NVIDIA

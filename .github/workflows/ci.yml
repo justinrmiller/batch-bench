@@ -1,0 +1,51 @@
+# Lint, type-check and test on Linux (CPU torch) and macOS (the MPS build).
+# GPU code paths are covered by tests with faked torch.cuda / torch.xpu /
+# torch.mps namespaces, so no GPU runner is needed.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check (${{ matrix.os }}, ${{ matrix.extra }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            extra: cpu
+          - os: macos-latest
+            extra: mps
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install (fails if uv.lock is stale)
+        run: uv sync --locked --extra ${{ matrix.extra }}
+
+      - name: Ruff
+        run: |
+          uv run --no-sync ruff check --output-format=github
+          uv run --no-sync ruff format --check
+
+      - name: ty
+        run: uv run --no-sync ty check
+
+      - name: Tests
+        run: uv run --no-sync pytest

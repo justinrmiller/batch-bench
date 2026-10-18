@@ -35,6 +35,7 @@ can't keep up. This tool catches that case and tells you.
 - [Troubleshooting](#troubleshooting)
 - [Limitations](#limitations)
 - [Development](#development)
+- [License](#license)
 
 ## How the batch size is chosen
 
@@ -69,6 +70,7 @@ from the matching PyTorch wheel index.
 | No GPU (testing) | `cpu` | CPU only |
 
 ```bash
+git clone https://github.com/justinrmiller/batch-bench.git
 cd batch-bench
 uv sync --extra rocm              # or cuda / xpu / mps / cpu
 uv run batch-bench devices        # confirm the GPU is visible and supported
@@ -371,7 +373,7 @@ The unit tests need no GPU and no network. Models are tiny, randomly
 initialized checkpoints saved to temp directories. The CUDA, ROCm, XPU and
 MPS code paths run against fake `torch.cuda` / `torch.xpu` / `torch.mps`
 namespaces. Coverage must stay at or above 90% (branch coverage included).
-CI (`.github/workflows/batch-bench.yml`) runs everything on Linux with the
+CI (`.github/workflows/ci.yml`) runs everything on Linux with the
 `cpu` extra and on macOS with the `mps` extra.
 
 ```
@@ -386,3 +388,7 @@ src/batch_bench/
   analysis.py  recommendation and diagnostics
   report.py    console tables, JSON and CSV
 ```
+
+## License
+
+[MIT](LICENSE)

@@ -1,6 +1,4 @@
-# Install from this directory with `make pre-commit`. pre-commit runs hooks
-# from the repository root, so paths below are relative to it and every hook
-# is limited to batch-bench/.
+# Install with `make pre-commit`.
 #
 # Tools run through `uv run --no-sync` so they use the versions pinned in
 # uv.lock without re-syncing (and swapping) the installed torch build.
@@ -9,48 +7,40 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        files: ^batch-bench/
       - id: end-of-file-fixer
-        files: ^batch-bench/
       - id: check-toml
-        files: ^batch-bench/
       - id: check-yaml
-        files: ^batch-bench/|^\.github/workflows/batch-bench\.yml$
       - id: check-added-large-files
-        files: ^batch-bench/
-        exclude: ^batch-bench/uv\.lock$
+        exclude: ^uv\.lock$
 
   - repo: local
     hooks:
       - id: uv-lock
         name: uv lock --check
-        entry: uv lock --check --project batch-bench
+        entry: uv lock --check
         language: system
-        files: ^batch-bench/(pyproject\.toml|uv\.lock)$
+        files: ^(pyproject\.toml|uv\.lock)$
         pass_filenames: false
       - id: ruff-check
         name: ruff check
-        entry: uv run --project batch-bench --no-sync ruff check --fix --force-exclude
+        entry: uv run --no-sync ruff check --fix --force-exclude
         language: system
         types_or: [python, pyi]
-        files: ^batch-bench/
       - id: ruff-format
         name: ruff format
-        entry: uv run --project batch-bench --no-sync ruff format --force-exclude
+        entry: uv run --no-sync ruff format --force-exclude
         language: system
         types_or: [python, pyi]
-        files: ^batch-bench/
       - id: ty
         name: ty check
-        entry: uv run --directory batch-bench --no-sync ty check
+        entry: uv run --no-sync ty check
         language: system
         types_or: [python, pyi]
-        files: ^batch-bench/
         pass_filenames: false
       - id: pytest
         name: pytest
-        entry: uv run --directory batch-bench --no-sync pytest -q
+        entry: uv run --no-sync pytest -q
         language: system
-        files: ^batch-bench/
         pass_filenames: false
+        always_run: true
         stages: [pre-push]
