@@ -8,6 +8,7 @@ git-ignored so local runs don't show up in `git status`.
 | Folder | Machine |
 | --- | --- |
 | [`apple-m4-pro/`](apple-m4-pro) | Apple M4 Pro (12-core CPU, 16-core GPU, 48 GB), MPS |
+| [`amd-r9700/`](amd-r9700) | AMD Radeon AI PRO R9700 (32 GB) on a Ryzen 5 5600X (64 GB), ROCm |
 
 Each run is a pair of files named `<UTC timestamp>-<backend><device index>`:
 

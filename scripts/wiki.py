@@ -77,13 +77,18 @@ HARDWARE = {
             "amd-r9700",
             "AMD Radeon AI PRO R9700 (ROCm)",
             specs=(
-                ("GPU", "AMD Radeon AI PRO R9700: RDNA 4 (`gfx1201`), 32 GB"),
+                ("GPU", "AMD Radeon AI PRO R9700: RDNA 4 (`gfx1201`), 64 compute units, 32 GB"),
+                ("Host", "AMD Ryzen 5 5600X (6 cores, 12 threads), 64 GB RAM, Ubuntu 26.04.1 LTS"),
                 ("Backend", "PyTorch ROCm 7.2 wheels (`uv sync --extra rocm`)"),
-                ("Host", "_To be added with the first results._"),
+                ("batch-bench default workers", "11 (CPUs − 1)"),
             ),
             notes=(
                 "MIOpen searches for kernels the first time it sees each batch shape. Warmup absorbs it, so the "
                 "numbers are unaffected, but first runs take longer.",
+                "PyTorch's ROCm build drives the GPU through the `torch.cuda` API, so out-of-memory errors in the "
+                "results tables read *CUDA out of memory*.",
+                "The DataLoader workers share a 6-core CPU with the process that feeds the GPU, so input-bound "
+                "models are limited by the host, not the card.",
             ),
         ),
     )
@@ -150,6 +155,48 @@ OBSERVATIONS: dict[tuple[str, str, str], list[str]] = {
         "img/s is within 1% of Dev img/s.",
         "**Steps are steady.** p95 is within 2.1% of p50 at every size.",
         "**Measured after the prefetch-drain timing fix** (4c7bfd7), unlike the CLIP runs on this machine.",
+    ],
+    ("clip-vit-b32", "amd-r9700", "inference"): [
+        "**Input-bound at every worker count.** The pick, batch 1024 with 4 workers, waited on the DataLoader "
+        "45% of the time; with 1 worker the wait is ≥79% from batch 16 up. The GPU alone ran 3,546 img/s at "
+        "batch 1024 (Dev img/s, 1 worker), 2.3× what the pipeline delivered.",
+        "**Workers matter more than batch size.** At batch 1024, 1 worker gets 471.7 img/s, 2 get 815.6 and "
+        "4 get 1,509.7: each worker supplies roughly 380–470 img/s. This sweep stopped at 4 of the 11 default "
+        "workers; rerun with `--num-workers 4,8,11` before relying on the batch size.",
+        "**The pick is the largest batch tested, so it may not be the knee.** With 4 workers, throughput was "
+        "still rising at 1024 (+7.7% over 512), and nothing ran out of memory (3.1 GiB, 10% of the budget).",
+        "**Batch 16 with 4 workers is the low-latency alternative:** 1,234.3 img/s (82% of the pick) at a "
+        "9.2 ms step p50, against 375.2 ms at 1024.",
+        "**More workers slow the device step at the largest batches.** At batch 1024, step p50 is 288.7 ms "
+        "with 1 worker and 375.2 ms with 4 (Dev img/s 3,546 vs. 2,729), and p95 is 28% above p50 at the pick. "
+        "The step includes the host-to-device copy, so the workers competing for the 6-core CPU are the "
+        "likely cause.",
+        "**The curves are uneven.** Batch 16 is slower than batch 8 with 1 and 2 workers (311.0 vs. 518.2 and "
+        "598.2 vs. 865.2 img/s), and batch 32 dips with 4 (986.2, against 1,234.3 at 16 and 1,220.1 at 64). "
+        "This is the only run, so a rerun would show whether the dips are real.",
+        "**Against the M4 Pro:** 2.9× its best end-to-end result (518.1 img/s), and the GPU alone is 6.8× "
+        "faster (3,546 vs. 519.3 Dev img/s). With one worker the two are level (518.2 img/s here at batch 8), "
+        "but the M4 Pro is GPU-bound there and this machine input-bound. Precision differs: bf16 here, fp16 "
+        "on the M4 Pro.",
+        "**Measured after the prefetch-drain timing fix** (4c7bfd7), which matters here: it corrected inflated "
+        "throughput for input-bound loaders.",
+    ],
+    ("segformer-b0", "amd-r9700", "inference"): [
+        "**Flat from batch 8 up.** With 2 workers, every batch from 8 to 144 gets 230.1–237.0 img/s, within "
+        "3% of the peak at 16. Device time per image settles at 4.2–4.3 ms, so bigger batches add only latency "
+        "and memory: step p50 is 34.3 ms at the pick and 552.4 ms at 128.",
+        "**GPU-bound with 2 or more workers.** Data wait is ≤1.1% at every size, and 4 workers are within "
+        "0.5% of 2 from batch 8 up.",
+        "**One worker can't keep up past batch 4.** It peaks at 219.5 img/s at batch 4, then falls to "
+        "130.8–146.7 img/s, 37–44% below 2 workers, with the GPU waiting 25–39% of the time.",
+        "**Memory sets the upper limit, not throughput.** With 2 workers, each image adds about 223 MiB: "
+        "1.8 GiB (6%) at the pick, 28.0 GiB (88%) at 128 and 29.4 GiB (93%) at 144, the largest batch that "
+        "fit. Batch 160 ran out of memory.",
+        "**Against the M4 Pro:** 2.5× its pick (232.2 vs. 94.4 img/s), and throughput holds as batches grow "
+        "where the M4 Pro's fell 65% by batch 128. Peak memory at 128 is 28.0 GiB here vs. 17.7 GiB there, "
+        "but ROCm reads PyTorch's peak counters while MPS is sampled after each step, so treat that gap as "
+        "approximate. Precision differs: bf16 here, fp16 on the M4 Pro.",
+        "**Steps are steady.** From batch 4 up, p95 is within 3.7% of p50 at every worker count.",
     ],
 }
 
