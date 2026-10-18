@@ -1,9 +1,11 @@
-.PHONY: help install dev lint format typecheck test test-hub check devices models bench pre-commit clean
+.PHONY: help install dev lint format typecheck test test-hub check devices models bench wiki pre-commit clean
 
 # Which PyTorch build `make install` / `make dev` install: cpu, cuda, rocm, xpu or mps.
 BACKEND ?= cpu
 # Extra arguments for `make bench`, e.g. ARGS="-m segformer-b5 --mode training".
 ARGS ?=
+# Clone of the GitHub wiki that `make wiki` writes into.
+WIKI ?= ../batch-bench.wiki
 
 # --no-sync: run with whatever `make dev BACKEND=...` installed, so a later
 # target can never swap the torch build behind your back.
@@ -46,6 +48,9 @@ models: ## List the model presets
 
 bench: ## Benchmark, e.g. make bench BACKEND=rocm ARGS="-t all --mode training"
 	$(UV_RUN) batch-bench run $(ARGS)
+
+wiki: ## Regenerate the wiki pages from benchmarks/ into WIKI, a clone of the wiki
+	$(UV_RUN) python scripts/wiki.py --wiki $(WIKI)
 
 pre-commit: ## Install the git hooks (ruff, ty and uv lock on commit; pytest on push)
 	$(UV_RUN) pre-commit install --install-hooks -t pre-commit -t pre-push

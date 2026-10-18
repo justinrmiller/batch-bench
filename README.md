@@ -376,6 +376,7 @@ make dev          # uv sync --extra cpu (BACKEND=rocm etc. to test on a GPU)
 make check        # ruff check + format check, ty, pytest with coverage
 make pre-commit   # git hooks: ruff, ty, uv lock --check on commit; pytest on push
 make test-hub     # every preset against real Hub checkpoints (downloads ~6 GB)
+make wiki         # regenerate the GitHub wiki from benchmarks/ (WIKI=path to a wiki clone)
 ```
 
 The unit tests need no GPU and no network. Models are tiny, randomly
