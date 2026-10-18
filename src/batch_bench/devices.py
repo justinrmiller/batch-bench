@@ -185,7 +185,7 @@ def arch_warnings(backend: Backend, arch: str | None, compiled: tuple[str, ...])
     if not arch or not compiled:
         return ()
     if backend is Backend.ROCM:
-        if arch in compiled:
+        if arch in {entry.split(":")[0] for entry in compiled}:
             return ()
         return (
             f"This torch build has no kernels for {arch} (built for {', '.join(compiled)}). "
@@ -330,9 +330,12 @@ class Accelerator:
         Unlike :meth:`total_memory`, this excludes memory held by other
         processes, such as a desktop session on the same GPU.
         """
-        if self.has_peak_counters:
+        if not self.has_peak_counters:
+            return None
+        try:
             return int(self._module.mem_get_info(self.index)[0])
-        return None
+        except RuntimeError:  # e.g. Intel drivers that cannot report free memory
+            return None
 
     def total_memory(self) -> int | None:
         """Memory budget of the device in bytes (MPS: Metal's recommended working set)."""
@@ -354,9 +357,15 @@ class Accelerator:
             self._module.set_per_process_memory_fraction(fraction, self.index)
 
     def supports_bf16(self) -> bool:
-        """Whether bfloat16 math is supported natively."""
+        """Whether bfloat16 math is supported natively (emulation does not count).
+
+        torch's ``is_bf16_supported`` counts emulation by default: on CUDA it
+        reports pre-Ampere GPUs (e.g. Turing) as supported, and on XPU it
+        returns True for every device. Emulated bf16 is slow, so AUTO
+        precision must not pick it.
+        """
         if self.backend in (Backend.CUDA, Backend.ROCM, Backend.XPU):
-            return bool(self._module.is_bf16_supported())
+            return bool(self._module.is_bf16_supported(including_emulation=False))
         # MPS supports bf16 on macOS 14+, which torch>=2.14 already requires.
         return True
 

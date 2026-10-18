@@ -219,7 +219,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--precision",
         default=Precision.AUTO,
         choices=list(Precision),
-        help="autocast precision; auto = bf16 if supported, else fp16 (fp32 on CPU)",
+        help="autocast precision; auto = bf16 if natively supported, else fp16 (fp32 on CPU)",
     )
     device.add_argument("--mode", default=Mode.INFERENCE, choices=list(Mode), help="what each step does")
     device.add_argument(
@@ -232,7 +232,8 @@ def build_parser() -> argparse.ArgumentParser:
     device.add_argument(
         "--no-cudnn-benchmark",
         action="store_true",
-        help="disable cuDNN/MIOpen autotuning (shortens first-run warmup on ROCm)",
+        help="disable cuDNN/MIOpen autotuning (shortens first-run warmup on ROCm); "
+        "always off for --image-dir without --image-size",
     )
 
     sweep = run.add_argument_group("sweep")
@@ -309,7 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["fork", "spawn", "forkserver"],
         help="how DataLoader workers start; unset uses Python's platform default",
     )
-    data.add_argument("--seed", type=int, default=0, help="seed for synthetic images")
+    data.add_argument("--seed", type=int, default=0, help="seed for synthetic images and the --image-dir order")
 
     output = run.add_argument_group("output")
     output.add_argument("--output-dir", type=Path, default=Path("results"), help="where to write JSON/CSV")
@@ -348,7 +349,7 @@ def select_models(names: Sequence[str], tasks: Sequence[str], revision: str | No
 def build_source(image_dir: Path | None, image_size: ImageSize | None, seed: int) -> ImageSource:
     """Images to feed the DataLoader: a folder, or synthetic JPEGs."""
     if image_dir is not None:
-        return FolderImageSource(image_dir, resize=image_size)
+        return FolderImageSource(image_dir, resize=image_size, seed=seed)
     return SyntheticImageSource(size=image_size or DEFAULT_IMAGE_SIZE, seed=seed)
 
 
@@ -446,6 +447,18 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
             f"{format_bytes(budget)} that is free."
         )
 
+    # Folder images of mixed sizes give batches of varying shape for models
+    # that keep aspect ratio (e.g. DETR, YOLOS). cuDNN/MIOpen autotune
+    # every new shape, so tuning would land inside the timed batches.
+    autotune = not args.no_cudnn_benchmark
+    if autotune and args.image_dir is not None and args.image_size is None:
+        autotune = False
+        if accelerator.supports_cudnn_benchmark:
+            console.print(
+                "[yellow]note:[/yellow] --image-dir without --image-size can give batches of varying shape, "
+                "so cuDNN/MIOpen autotuning is off to keep re-tuning out of the timings. "
+                "Pass --image-size to fix the input size and keep autotuning on."
+            )
     settings = TrialSettings(
         mode=Mode(args.mode),
         precision=resolve_precision(Precision(args.precision), accelerator),
@@ -455,7 +468,7 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
         pin_memory=not args.no_pin_memory,
         prefetch_factor=args.prefetch_factor,
         compile_model=args.compile,
-        cudnn_benchmark=not args.no_cudnn_benchmark,
+        cudnn_benchmark=autotune,
         mp_context=args.mp_context,
     )
     if args.batch_sizes is None and args.max_batch_size < args.min_batch_size:

@@ -111,6 +111,8 @@ def test_device_count(monkeypatch: pytest.MonkeyPatch):
 class TestArchWarnings:
     def test_rocm_requires_an_exact_gfx_match(self):
         assert arch_warnings(Backend.ROCM, "gfx1201", ("gfx1100", "gfx1201")) == ()
+        # Build lists can carry feature flags; the base target is what matters.
+        assert arch_warnings(Backend.ROCM, "gfx90a", ("gfx90a:sramecc+:xnack-",)) == ()
         (warning,) = arch_warnings(Backend.ROCM, "gfx1201", ("gfx90a", "gfx1100"))
         assert "gfx1201" in warning
         assert "repo.radeon.com" in warning
@@ -164,7 +166,14 @@ class TestCudaLikeAccelerator:
 
     def test_bf16_support_comes_from_the_backend(self, make_device_module):
         assert Accelerator(Backend.CUDA, module=make_device_module(bf16=True)).supports_bf16()
+        # Emulated bf16 (pre-Ampere CUDA, some Intel GPUs) does not count.
         assert not Accelerator(Backend.CUDA, module=make_device_module(bf16=False)).supports_bf16()
+        assert not Accelerator(Backend.XPU, module=make_device_module(bf16=False)).supports_bf16()
+
+    def test_unreadable_free_memory_is_unknown(self, make_device_module):
+        module = make_device_module()
+        module.mem_get_info = module.failing_mem_get_info
+        assert Accelerator(Backend.XPU, module=module).free_memory() is None
 
     def test_cuda_info(self, make_device_module, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(torch.version, "cuda", "13.0")

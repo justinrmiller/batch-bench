@@ -77,6 +77,26 @@ class TestResolveModel:
     def test_explicit_task_wins(self, tiny_embedder_dir: Path):
         spec = resolve_model(str(tiny_embedder_dir), task=Task.IMAGE_SEGMENTATION)
         assert spec.task is Task.IMAGE_SEGMENTATION
+        # The checkpoint's own class does a different task, so the task's auto classes are used.
+        assert spec.model_class is None
+
+    def test_embedding_task_on_a_classifier_uses_the_backbone(self, tmp_path: Path):
+        config = transformers.ViTConfig(
+            hidden_size=16,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            intermediate_size=16,
+            image_size=32,
+            patch_size=8,
+        )
+        transformers.ViTForImageClassification(config).save_pretrained(tmp_path)
+        transformers.ViTImageProcessor(size={"height": 32, "width": 32}).save_pretrained(tmp_path)
+        spec = resolve_model(str(tmp_path), task=Task.EMBEDDING)
+        assert spec.model_class is None
+        loaded = load_model(spec)
+        assert isinstance(loaded.model, transformers.ViTModel)
+        output = make_forward(Task.EMBEDDING, loaded.model.eval())(_pixels(2, size=32))
+        assert primary_output(Task.EMBEDDING, output).shape == (2, 16)
 
     def test_uninferable_task_is_an_error(self, tmp_path: Path):
         config = transformers.ViTConfig(hidden_size=8, num_hidden_layers=1, num_attention_heads=1)

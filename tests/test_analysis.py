@@ -66,7 +66,7 @@ def test_memory_headroom_excludes_nearly_full_runs():
     assert rec is not None
     assert rec.fastest.batch_size == 64
     assert rec.recommended.batch_size == 32
-    assert any("more than 90% of device memory" in note for note in rec.notes)
+    assert any("more than 90% of usable memory" in note for note in rec.notes)
 
 
 def test_unknown_peak_memory_passes_the_headroom_check():

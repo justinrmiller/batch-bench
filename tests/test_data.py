@@ -85,12 +85,24 @@ class TestFolderImageSource:
 
     def test_finds_images_recursively(self, image_dir: Path):
         source = FolderImageSource(image_dir)
-        assert [path.name for path in source.files] == ["a.png", "b.JPG"]
+        assert sorted(path.name for path in source.files) == ["a.png", "b.JPG"]
         assert len(source) == 2
-        assert source.load(0).size == (20, 10)
-        grey = source.load(3)  # wraps around to b.JPG
-        assert grey.mode == "RGB"
-        assert grey.size == (12, 12)
+        assert {source.load(i).size for i in range(2)} == {(20, 10), (12, 12)}
+        assert source.load(2).size == source.load(0).size  # wraps around
+        assert all(source.load(i).mode == "RGB" for i in range(2))
+
+    def test_order_is_shuffled_by_seed_not_sorted(self, tmp_path: Path):
+        # Sorted order would feed a small batch from one subdirectory only.
+        for folder in ("class_a", "class_b", "class_c"):
+            (tmp_path / folder).mkdir()
+            for index in range(10):
+                Image.new("RGB", (4, 4)).save(tmp_path / folder / f"{index}.png")
+        first = FolderImageSource(tmp_path, seed=1)
+        assert first.files == FolderImageSource(tmp_path, seed=1).files
+        assert first.files != FolderImageSource(tmp_path, seed=2).files
+        assert first.files != sorted(first.files)
+        assert len({path.parent.name for path in first.files[:6]}) > 1
+        assert pickle.loads(pickle.dumps(first)).files == first.files
 
     def test_resize(self, image_dir: Path):
         source = FolderImageSource(image_dir, resize=(16, 16))

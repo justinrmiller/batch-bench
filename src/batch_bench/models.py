@@ -206,7 +206,12 @@ def resolve_model(name: str, task: Task | None = None, revision: str | None = No
     task = task or infer_task(architectures)
     if task is None:
         raise ValueError(f"cannot infer the task for {name!r} from its config; pass --task ({', '.join(Task)})")
-    model_class = next((arch for arch in architectures if hasattr(transformers, arch)), None)
+    # The checkpoint's own class keeps its heads (e.g. a CLIP projection), but only
+    # when it does the requested task: `--task embedding` on a classifier needs
+    # the backbone from AutoModel, not the classification head.
+    model_class = next(
+        (arch for arch in architectures if hasattr(transformers, arch) and infer_task([arch]) is task), None
+    )
     short = name.rstrip("/").rsplit("/", 1)[-1]
     return ModelSpec(name=short, model_id=name, task=task, model_class=model_class)
 

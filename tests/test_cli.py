@@ -167,7 +167,7 @@ def test_run_end_to_end(tiny_segmenter_dir: Path, tmp_path: Path, capsys: pytest
     assert "Recommended: batch_size=" in out
     assert "no GPU is visible" in out.replace("\n", " ")
 
-    (json_path,) = tmp_path.glob("*-cpu.json")
+    (json_path,) = tmp_path.glob("*-cpu0.json")
     data = json.loads(json_path.read_text())
     assert data["settings"]["batch_sizes"] == [1, 2]
     assert data["settings"]["image_size"] == [64, 48]
@@ -178,7 +178,7 @@ def test_run_end_to_end(tiny_segmenter_dir: Path, tmp_path: Path, capsys: pytest
     assert [r["status"] for r in model["results"]] == ["ok", "ok"]
     assert model["recommendation"]["recommended"]["batch_size"] in (1, 2)
 
-    (csv_path,) = tmp_path.glob("*-cpu.csv")
+    (csv_path,) = tmp_path.glob("*-cpu0.csv")
     with csv_path.open(newline="") as handle:
         assert len(list(csv.DictReader(handle))) == 2
 
@@ -260,6 +260,31 @@ def test_busy_gpu_shrinks_the_memory_budget(
     assert "12.0 GiB of 32.0 GiB is already in use" in out
     (json_path,) = tmp_path.glob("*.json")
     assert json.loads(json_path.read_text())["settings"]["memory_budget_bytes"] == 20 * GIB
+
+
+def test_mixed_size_folders_turn_autotuning_off(
+    tiny_segmenter_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    from PIL import Image
+
+    images = tmp_path / "images"
+    images.mkdir()
+    Image.new("RGB", (40, 30)).save(images / "wide.png")
+    Image.new("RGB", (30, 40)).save(images / "tall.png")
+    monkeypatch.setattr(Accelerator, "supports_cudnn_benchmark", property(lambda self: True))
+    monkeypatch.setattr(torch.backends.cudnn, "benchmark", False)
+    common = ["run", "-m", str(tiny_segmenter_dir), "--batch-sizes", "1", "--num-workers", "0"]
+    common += ["--warmup-batches", "0", "--measure-batches", "1", "--image-dir", str(images)]
+
+    assert main([*common, "--output-dir", str(tmp_path / "mixed")]) == 0
+    assert "autotuning is off" in capsys.readouterr().out.replace("\n", " ")
+    (mixed,) = (tmp_path / "mixed").glob("*.json")
+    assert json.loads(mixed.read_text())["settings"]["cudnn_benchmark"] is False
+
+    assert main([*common, "--image-size", "32x32", "--output-dir", str(tmp_path / "fixed")]) == 0
+    assert "autotuning is off" not in capsys.readouterr().out.replace("\n", " ")
+    (fixed,) = (tmp_path / "fixed").glob("*.json")
+    assert json.loads(fixed.read_text())["settings"]["cudnn_benchmark"] is True
 
 
 def test_cpu_fallback_explains_an_invisible_gpu(

@@ -124,7 +124,9 @@ didn't (it failed to load, or no batch size completed). `2`: usage error.
 ### Output files
 
 Each run writes two files to `--output-dir` (default `results/`), named
-`<UTC timestamp>-<backend>`:
+`<UTC timestamp>-<backend><device index>`, e.g. `20261018-021500-rocm0`.
+If two runs start in the same second, say one per GPU, the second gets a
+`-2` suffix rather than overwriting the first.
 
 - **`.json`**: everything. `device` holds name, memory, arch, runtime and
   build warnings. `environment` holds Python, torch and transformers
@@ -181,11 +183,11 @@ With neither `-m` nor `-t`, the default preset of every task runs.
 | --- | --- | --- |
 | `--device` | `auto` | `cuda`, `rocm`, `xpu`, `mps` or `cpu`. `auto` picks the first visible GPU, else the CPU, and warns when it falls back. |
 | `--device-index` | `0` | Which GPU, on multi-GPU machines. |
-| `--precision` | `auto` | Autocast dtype. `auto` is bf16 where supported, otherwise fp16, and fp32 on CPU. |
+| `--precision` | `auto` | Autocast dtype. `auto` is bf16 where the GPU supports it natively (emulation doesn't count), otherwise fp16, and fp32 on CPU. |
 | `--mode` | `inference` | `training` adds backward and an AdamW step. |
 | `--memory-fraction` | none; `1.0` on MPS | Cap the process at this fraction of device memory. |
 | `--compile` | off | Wrap the model in `torch.compile`, recompiling for each batch size. |
-| `--no-cudnn-benchmark` | | Skip cuDNN/MIOpen autotuning. Shortens the first trials on ROCm. |
+| `--no-cudnn-benchmark` | | Skip cuDNN/MIOpen autotuning. Shortens the first trials on ROCm. Autotuning is also off automatically for `--image-dir` without `--image-size`. |
 
 **Sweep**
 
@@ -205,12 +207,12 @@ With neither `-m` nor `-t`, the default preset of every task runs.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--image-dir` | synthetic | Benchmark on your images (`.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, recursive). |
+| `--image-dir` | synthetic | Benchmark on your images (`.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, recursive), read in a seeded random order. |
 | `--image-size` | `640x480` | Size of synthetic images. With `--image-dir`, resize your images to it. |
 | `--preprocess` | `batch` | Run the image processor per batch (in `collate_fn`) or per sample (in `__getitem__`). |
 | `--no-pin-memory` | | Disable pinned host memory (CUDA, ROCm, XPU). |
 | `--mp-context` | platform default | Worker start method: `fork`, `spawn` or `forkserver`. |
-| `--seed` | `0` | Seed for the synthetic images. |
+| `--seed` | `0` | Seed for the synthetic images and for the order of `--image-dir` files. |
 
 **Output**
 
@@ -242,6 +244,14 @@ With neither `-m` nor `-t`, the default preset of every task runs.
 - **A fresh DataLoader per trial** with `drop_last=True`. Synthetic images are
   smooth random JPEGs that get decoded for every sample, so the decode cost
   is realistic without a dataset on disk.
+- **Your images are read in a seeded random order.** Sorted order would give
+  small batch sizes images from the first subdirectory only. In an
+  ImageNet-style tree that's a single class.
+- **Variable input shapes turn autotuning off.** Some models keep each
+  image's aspect ratio and pad batches (the DETR and YOLOS presets), so mixed
+  image sizes give a new tensor shape on almost every batch. cuDNN and MIOpen
+  would re-tune kernels for each new shape inside the timed batches, so
+  `--image-dir` without `--image-size` runs without autotuning.
 - **Warmup and measurement in whole worker bursts.** All workers start
   together and each builds a full batch, so an input-bound loader delivers
   batches in bursts of `num_workers`. With any workers, warmup and measured
@@ -262,6 +272,10 @@ With neither `-m` nor `-t`, the default preset of every task runs.
   cuDNN/cuBLAS, MPS and Level Zero. The allocator cache is emptied before
   the next trial. Other errors are recorded as `error`, and the sweep
   carries on.
+- **The timing logic is itself tested.** `tests/test_methodology.py` builds
+  pipelines with known throughput (sleeping loaders and models) and checks
+  that the measured images/s and data-wait share match theory. In practice
+  they land within a few percent, against a 15% test tolerance.
 - **Peak memory** comes from the caching allocator's counters on CUDA, ROCm
   and XPU. MPS has no peak counters, so `driver_allocated_memory()` is polled
   after every step. That's an approximation, and the budget it's compared to
@@ -298,6 +312,9 @@ With neither `-m` nor `-t`, the default preset of every task runs.
   `pytorch-cu130` index URL in `pyproject.toml` to `.../whl/cu126` and
   re-lock.
 - `batch-bench devices` warns if the wheel has no kernels for your GPU.
+- Turing and older GPUs have no native bf16, so `--precision auto` uses fp16
+  on them. torch would otherwise report bf16 as supported through slow
+  emulation.
 
 ### Intel (XPU)
 

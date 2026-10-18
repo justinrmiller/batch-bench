@@ -244,9 +244,17 @@ def _csv_row(model: ModelReport, result: TrialResult) -> dict[str, Any]:
 
 
 def write_reports(report: RunReport, output_dir: Path) -> tuple[Path, Path]:
-    """Write ``<timestamp>-<backend>.json`` and ``.csv`` into ``output_dir``."""
+    """Write ``<timestamp>-<backend><index>.json`` and ``.csv`` into ``output_dir``.
+
+    Runs started in the same second (e.g. one per GPU) get a numeric suffix
+    instead of overwriting each other.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"{report.created_at:%Y%m%d-%H%M%S}-{report.device.backend}"
+    base = f"{report.created_at:%Y%m%d-%H%M%S}-{report.device.backend}{report.device.index}"
+    stem, attempt = base, 1
+    while (output_dir / f"{stem}.json").exists() or (output_dir / f"{stem}.csv").exists():
+        attempt += 1
+        stem = f"{base}-{attempt}"
     json_path = output_dir / f"{stem}.json"
     csv_path = output_dir / f"{stem}.csv"
     json_path.write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")

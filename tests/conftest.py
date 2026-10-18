@@ -196,8 +196,12 @@ class FakeDeviceModule:
     def set_per_process_memory_fraction(self, fraction: float, index: int) -> None:
         self._record("set_per_process_memory_fraction", fraction, index)
 
-    def is_bf16_supported(self) -> bool:
-        return self.bf16
+    def is_bf16_supported(self, including_emulation: bool = True) -> bool:
+        # Like torch: emulated bf16 counts unless the caller excludes it.
+        return self.bf16 or including_emulation
+
+    def failing_mem_get_info(self, index: int) -> tuple[int, int]:
+        raise RuntimeError("The device does not support querying free memory")
 
     def mem_get_info(self, index: int) -> tuple[int, int]:
         return self.free, self.props.total_memory

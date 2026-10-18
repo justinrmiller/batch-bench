@@ -9,6 +9,7 @@ overstate the useful batch size whenever the input pipeline is the bottleneck.
 from __future__ import annotations
 
 import io
+import random
 from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
@@ -82,11 +83,12 @@ def _encode_pool(size: ImageSize, pool_size: int, seed: int, quality: int) -> li
     return jpegs
 
 
-def _find_images(root: Path) -> list[Path]:
+def _find_images(root: Path, seed: int) -> list[Path]:
     files = sorted(path for path in root.rglob("*") if path.suffix.lower() in IMAGE_EXTENSIONS and path.is_file())
     if not files:
         extensions = ", ".join(sorted(IMAGE_EXTENSIONS))
         raise FileNotFoundError(f"no images ({extensions}) found under {root}")
+    random.Random(seed).shuffle(files)  # sort first so the order depends only on the seed
     return files
 
 
@@ -149,28 +151,35 @@ class SyntheticImageSource:
 class FolderImageSource:
     """Images found recursively under ``root``.
 
+    Files are visited in a seeded random order. Sorted order would give a
+    small batch size images from the first subdirectory only (one class of an
+    ImageNet-style tree), which is not representative of sizes or content.
+
     Args:
         root: Directory to search.
         resize: Optional ``(width, height)`` every image is resized to, which
             makes per-sample preprocessing produce equal-sized tensors.
+        seed: Seed for the visiting order.
 
     Raises:
         FileNotFoundError: If ``root`` holds no supported images.
     """
 
-    def __init__(self, root: Path, resize: ImageSize | None = None) -> None:
+    def __init__(self, root: Path, resize: ImageSize | None = None, seed: int = 0) -> None:
         self.root = root
         self.resize = resize
-        self.files = _find_images(root)
+        self.seed = seed
+        self.files = _find_images(root, seed)
 
     def __getstate__(self) -> dict[str, Any]:
         # A large tree pickles to megabytes of paths; rescanning is cheaper.
-        return {"root": self.root, "resize": self.resize}
+        return {"root": self.root, "resize": self.resize, "seed": self.seed}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.root = state["root"]
         self.resize = state["resize"]
-        self.files = _find_images(self.root)
+        self.seed = state["seed"]
+        self.files = _find_images(self.root, self.seed)
 
     def __len__(self) -> int:
         return len(self.files)

@@ -59,9 +59,9 @@ def recommend(
     Args:
         results: Trials for one model, any order, possibly several worker counts.
         tolerance: Accept configurations within this fraction of the best throughput.
-        memory_headroom: Fraction of device memory to keep free; trials whose
+        memory_headroom: Fraction of usable memory to keep free; trials whose
             peak reserved memory exceeds the rest are not recommended.
-        total_memory_bytes: Device memory budget; None disables the headroom check.
+        total_memory_bytes: Usable memory budget; None disables the headroom check.
         input_bound_threshold: Data-wait fraction above which the pipeline is
             reported as input-bound.
         max_tested: Largest batch size the sweep was allowed to try, used to
@@ -86,10 +86,10 @@ def recommend(
             if fastest not in within:
                 notes.append(
                     f"The fastest run (batch {fastest.batch_size}) used more than "
-                    f"{1 - memory_headroom:.0%} of device memory, so it is not recommended."
+                    f"{1 - memory_headroom:.0%} of usable memory, so it is not recommended."
                 )
         else:
-            notes.append(f"Every run used more than {1 - memory_headroom:.0%} of device memory.")
+            notes.append(f"Every run used more than {1 - memory_headroom:.0%} of usable memory.")
 
     best = max(_throughput(r) for r in candidates)
     acceptable = [r for r in candidates if _throughput(r) >= (1.0 - tolerance) * best]

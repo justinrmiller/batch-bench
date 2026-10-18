@@ -83,14 +83,14 @@ usually also see an `oom` line where the card runs out of memory.
 
 - **`Recommended: batch_size=…, num_workers=…`** is the answer. It's the
   smallest batch within 5% of the best throughput that also leaves 10% of
-  GPU memory free.
+  the usable GPU memory free.
 - **`img/s` vs `Dev img/s`.** The first is what you'd really get. The second
   is what the GPU could do if data loading were free. A big gap means the
   DataLoader is the bottleneck, and a `note: Input-bound` line will say so.
 - **`note:` lines** flag anything that affects the answer: a faster run that
   was too close to the memory limit, a sweep that never ran out of memory,
   and so on.
-- Everything is also saved to `results/<timestamp>-<backend>.json` and
+- Everything is also saved to `results/<timestamp>-<backend><index>.json` and
   `.csv`.
 
 ## 6. Benchmark what you actually run

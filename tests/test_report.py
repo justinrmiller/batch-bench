@@ -169,8 +169,8 @@ def test_write_reports(tmp_path: Path, model_report: ModelReport):
     created = datetime(2026, 10, 17, 12, 30, 5, tzinfo=UTC)
     report = RunReport(device=DEVICE, settings={"mode": "inference"}, models=[model_report], created_at=created)
     json_path, csv_path = write_reports(report, tmp_path / "out")
-    assert json_path.name == "20261017-123005-rocm.json"
-    assert csv_path.name == "20261017-123005-rocm.csv"
+    assert json_path.name == "20261017-123005-rocm0.json"
+    assert csv_path.name == "20261017-123005-rocm0.csv"
 
     data = json.loads(json_path.read_text())
     assert data["interrupted"] is False
@@ -189,6 +189,15 @@ def test_write_reports(tmp_path: Path, model_report: ModelReport):
     assert [row["recommended"] for row in rows] == ["False", "True", "False"]
     assert rows[1]["peak_reserved_mib"] == "2048.0"
     assert rows[2]["error"] == "OutOfMemoryError: HIP out of memory"
+
+
+def test_reports_started_in_the_same_second_do_not_overwrite(tmp_path: Path):
+    created = datetime(2026, 10, 17, 12, 30, 5, tzinfo=UTC)
+    first = write_reports(RunReport(device=DEVICE, settings={"run": 1}, created_at=created), tmp_path)
+    second = write_reports(RunReport(device=DEVICE, settings={"run": 2}, created_at=created), tmp_path)
+    assert second[0].name == "20261017-123005-rocm0-2.json"
+    assert json.loads(first[0].read_text())["settings"] == {"run": 1}
+    assert json.loads(second[0].read_text())["settings"] == {"run": 2}
 
 
 def test_model_report_without_recommendation_serializes():
