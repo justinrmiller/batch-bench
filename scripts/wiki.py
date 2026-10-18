@@ -130,6 +130,26 @@ OBSERVATIONS: dict[tuple[str, str, str], list[str]] = {
         "inside the 5% tolerance. In the earlier run it was 7.6% below, so that run picked 128. Batch 64 "
         "moved 3.3% between runs; every other size above 1 moved ≤1.2%. Pick **64** for half the step "
         "latency, or **128** for 2.4% more throughput and a choice that holds across runs.",
+        "**Measured before the prefetch-drain timing fix** (4c7bfd7), which corrected inflated throughput for "
+        "input-bound loaders. These runs waited on data ≤1.3% of the time, so the fix shouldn't change them; "
+        "a rerun would confirm.",
+    ],
+    ("segformer-b0", "apple-m4-pro", "inference"): [
+        "**Small batches win.** Throughput peaks at batch 8 (94.5 img/s), and batch 4 gets 94.4, so it's the "
+        "pick. Batch 1 already reaches 78.8 img/s: batching adds only 20% before the GPU is saturated.",
+        "**Past 8 it gets slower, not just flatter:** −15% at 16, −19% at 32, −24% at 64 and −65% at 128. "
+        "Device time per image climbs from 10.5 ms at batch 4 and 8 to 13.8 ms at 64 and 30.2 ms at 128.",
+        "**There's no throughput to find above 128.** batch-bench notes that nothing ran out of memory, but "
+        "with throughput falling, a larger `--max-batch-size` would only locate the memory ceiling.",
+        "**Activations, not weights, take the memory.** Peak memory is 1.2 GiB at the pick, 10.6 GiB at 64 "
+        "and 17.7 GiB (47% of the budget) at 128: 13× what CLIP ViT-B/32 used at batch 128 on this machine, "
+        "from a model with a 23rd of its parameters (3.8M vs. 87.8M).",
+        "**The slowdown at 128 isn't the Mac swapping.** System swap use was the same before and after the "
+        "run (1.2 GB).",
+        "**The GPU is the bottleneck with one DataLoader worker.** Data wait is ≤1.3% at every size, and "
+        "img/s is within 1% of Dev img/s.",
+        "**Steps are steady.** p95 is within 2.1% of p50 at every size.",
+        "**Measured after the prefetch-drain timing fix** (4c7bfd7), unlike the CLIP runs on this machine.",
     ],
 }
 
