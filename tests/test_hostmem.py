@@ -5,7 +5,7 @@ from pathlib import Path
 
 import psutil
 
-from batch_bench.hostmem import HostMemory, HostMemoryMonitor
+from batch_bench.hostmem import HostFootprint, HostMemory, HostMemoryMonitor, round_up_to_power_of_two
 
 GIB = 1024**3
 
@@ -98,3 +98,33 @@ class TestCgroupLimits:
         proc.write_text("12:memory:/docker/abc\n")  # cgroup v1 only
         for host in (HostMemory(proc_cgroup=proc), HostMemory(proc_cgroup=tmp_path / "missing")):
             assert host.total() == psutil.virtual_memory().total
+
+
+MIB = 1024**2
+
+
+def test_round_up_to_power_of_two():
+    assert [round_up_to_power_of_two(n) for n in (0, 1, 4000, 4096, 154_140_672)] == [0, 1, 4096, 4096, 256 * MIB]
+
+
+class TestHostFootprint:
+    def test_without_pinned_memory_the_footprint_scales_linearly(self):
+        assert HostFootprint(256, 10 * GIB).project(512) == 20 * GIB
+        assert HostFootprint(256, 10 * GIB, pinned_bytes=0, tensor_bytes=(147 * MIB,)).project(384) == 15 * GIB
+
+    def test_pinned_batches_grow_in_power_of_two_steps(self):
+        # clip-vit-b32 with 11 workers on the R9700: batch 256 took 15.6 GiB, with 23 batches of
+        # 147 MiB pinned as 256 MiB blocks. Batch 448 then took 28.7 GiB; linear scaling says 27.3.
+        reference = HostFootprint(256, 15_974 * MIB, pinned_bytes=23 * 256 * MIB, tensor_bytes=(154_140_672,))
+        assert round(reference.project(448) / GIB, 1) == 28.7
+        # Within the same power of two, the pinned part doesn't grow at all.
+        assert reference.project(288) == int((15_974 - 23 * 256) * MIB * 288 / 256 + 23 * 256 * MIB)
+
+    def test_each_tensor_is_rounded_separately(self):
+        # 10 batches of a 3 MiB and a 1 MiB tensor pinned as 4 + 1 MiB; at 1.5x they need 8 + 2 MiB.
+        reference = HostFootprint(2, 100 * MIB, pinned_bytes=50 * MIB, tensor_bytes=(3 * MIB, 1 * MIB))
+        assert reference.project(3) == 75 * MIB + 100 * MIB
+
+    def test_pinned_memory_beyond_the_measured_drop_counts_nothing_else(self):
+        reference = HostFootprint(1, 1 * GIB, pinned_bytes=2 * GIB, tensor_bytes=(GIB // 2,))
+        assert reference.project(2) == 4 * GIB  # 4 pinned batches, now 1 GiB each

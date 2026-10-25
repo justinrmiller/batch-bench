@@ -303,8 +303,10 @@ With neither `-m` nor `-t`, the default preset of every task runs.
     `systemd-run -p MemoryMax=`) when that's tighter. `Host mem` is how far
     it fell below its level at the start of the trial.
   - Before a larger batch runs, its need is projected from the largest
-    successful trial with the same worker count, scaled by batch size. If it
-    won't fit above `--host-memory-reserve`, the trial is skipped.
+    successful trial with the same worker count. Most of it scales with the
+    batch size; pinned batches grow in power-of-two steps, as the allocator
+    rounds them (CUDA and ROCm report how much was pinned). If it won't fit
+    above `--host-memory-reserve`, the trial is skipped.
   - If free memory falls into the reserve anyway, the trial's workers are
     killed at once.
   - Pinned buffers are released between trials, so each batch size doesn't

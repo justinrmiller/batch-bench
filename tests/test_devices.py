@@ -150,6 +150,7 @@ class TestCudaLikeAccelerator:
             ("set_device", (1,)),
             ("synchronize", (1,)),
             ("reset_peak_memory_stats", (1,)),
+            ("reset_peak_host_memory_stats", ()),
             ("empty_cache", ()),
             ("synchronize", (1,)),  # pinned host blocks are only freed once the device catches up
             ("set_per_process_memory_fraction", (0.5, 1)),
@@ -243,6 +244,15 @@ class TestMpsAccelerator:
         assert not accel.supports_pin_memory
         assert not accel.has_peak_counters
 
+    def test_peak_pinned_memory_comes_from_the_host_allocator(self, make_device_module):
+        module = make_device_module()
+        rocm = Accelerator(Backend.ROCM, module=module)
+        assert rocm.peak_pinned_memory() is None  # no pinned allocation yet
+        module.host_stats = {"allocated_bytes.peak": 3 * 1024**3}
+        assert rocm.peak_pinned_memory() == 3 * 1024**3
+        # torch.xpu reports no host allocator stats.
+        assert Accelerator(Backend.XPU, module=module).peak_pinned_memory() is None
+
     def test_mps_empties_its_cache_without_pinned_memory(self, make_mps_module, host_cache_releases):
         module = make_mps_module([])
         Accelerator(Backend.MPS, module=module).empty_cache()
@@ -276,6 +286,7 @@ class TestCpuAccelerator:
         cpu.empty_cache()
         assert not host_cache_releases  # nothing is pinned without a GPU
         assert cpu.peak_memory() == devices.MemoryStats(allocated=None, reserved=None)
+        assert cpu.peak_pinned_memory() is None
         assert cpu.total_memory() is None
         assert cpu.device == torch.device("cpu")
         assert cpu.supports_bf16()
