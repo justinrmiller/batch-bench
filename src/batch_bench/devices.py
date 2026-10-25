@@ -12,6 +12,7 @@ benchmark loop never branches on the backend.
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import platform
 import re
@@ -292,10 +293,17 @@ class Accelerator:
             self._module.synchronize(self.index)
 
     def empty_cache(self) -> None:
-        """Collect garbage and return cached allocator blocks to the driver."""
+        """Collect garbage and return cached device and pinned host memory to the driver."""
         gc.collect()
         if self._module is not None:
             self._module.empty_cache()
+        if self.supports_pin_memory:
+            # Pinned batches stay cached, rounded up to a power of two, until released:
+            # without this, each batch size of a sweep keeps its own set of blocks. Freed
+            # blocks are only returned once the device has caught up with them.
+            self.synchronize()
+            with contextlib.suppress(RuntimeError):  # a build without a host caching allocator
+                torch.accelerator.empty_host_cache()
 
     def reset_peak_memory(self) -> None:
         """Start a fresh peak-memory window."""

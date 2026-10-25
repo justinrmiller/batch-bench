@@ -20,7 +20,8 @@ class Recommendation:
             leave room for larger inputs at no real throughput cost.
         fastest: Highest end-to-end throughput observed.
         largest_fit: Largest batch size that ran.
-        first_oom: Smallest batch size that ran out of memory, if any.
+        first_oom: Smallest batch size that ran out of device memory, if any.
+            Host RAM limits are reported in ``notes``.
         notes: Human-readable caveats, such as an input-bound pipeline.
     """
 
@@ -97,6 +98,7 @@ def recommend(
 
     oom_sizes = [r.batch_size for r in results if r.status is TrialStatus.OOM]
     first_oom = min(oom_sizes) if oom_sizes else None
+    host_oom_sizes = [r.batch_size for r in results if r.status is TrialStatus.HOST_OOM]
     largest_fit = max(r.batch_size for r in completed)
 
     wait = recommended.data_wait_fraction or 0.0
@@ -109,7 +111,12 @@ def recommend(
             "speed up decoding/preprocessing, or move preprocessing to the GPU before "
             "raising the batch size."
         )
-    if first_oom is None:
+    if host_oom_sizes:
+        notes.append(
+            f"Host RAM ran short at batch {min(host_oom_sizes)}. "
+            "Fewer workers (--num-workers), --prefetch-factor 1 or --no-pin-memory need less host memory."
+        )
+    elif first_oom is None:
         limit = f" up to batch {max_tested}" if max_tested is not None else ""
         notes.append(
             f"No out-of-memory{limit}; raise --max-batch-size (or list larger --batch-sizes) "

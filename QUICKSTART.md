@@ -53,32 +53,33 @@ line is one finished trial; a table and a recommendation follow:
 
 ```
 segformer-b0: loading nvidia/segformer-b0-finetuned-ade-512-512
-  batch     1  workers  2  ok     4.6 img/s  step p50 209.6 ms  data wait 1%  peak -
-  batch     2  workers  2  ok     8.2 img/s  step p50 223.8 ms  data wait 1%  peak -
-  batch     4  workers  2  ok     8.3 img/s  step p50 468.1 ms  data wait 1%  peak -
-  batch     8  workers  2  ok     7.6 img/s  step p50 1029.0 ms  data wait 0%  peak -
+  batch     1  workers  2  ok     6.4 img/s  step p50 153.5 ms  data wait 1%  peak -  host 645 MiB
+  batch     2  workers  2  ok     10.4 img/s  step p50 190.9 ms  data wait 1%  peak -  host 476 MiB
+  batch     4  workers  2  ok     9.6 img/s  step p50 410.4 ms  data wait 1%  peak -  host 1.3 GiB
+  batch     8  workers  2  ok     8.8 img/s  step p50 884.5 ms  data wait 1%  peak -  host 2.6 GiB
 segformer-b0 (image-segmentation, nvidia/segformer-b0-finetuned-ade-512-512)
-┏━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Batch ┃ Workers ┃ Status ┃ img/s ┃ Dev img/s ┃ p50 ms ┃ p95 ms ┃ Wait ┃ Peak mem ┃             ┃
-┡━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━┩
-│     1 │       2 │     ok │   4.6 │       4.8 │  209.6 │  260.8 │   1% │        - │             │
-│     2 │       2 │     ok │   8.2 │       8.9 │  223.8 │  345.1 │   1% │        - │ recommended │
-│     4 │       2 │     ok │   8.3 │       8.5 │  468.1 │  554.0 │   1% │        - │ fastest     │
-│     8 │       2 │     ok │   7.6 │       7.8 │ 1029.0 │ 1241.6 │   0% │        - │             │
-└───────┴─────────┴────────┴───────┴───────────┴────────┴────────┴──────┴──────────┴─────────────┘
-Recommended: batch_size=2, num_workers=2 (8.2 img/s, peak -)
+┏━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Batch ┃ Workers ┃ Status ┃ img/s ┃ Dev img/s ┃ p50 ms ┃ p95 ms ┃ Wait ┃ Peak mem ┃ Host mem ┃                      ┃
+┡━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━┩
+│     1 │       2 │     ok │   6.4 │       6.5 │  153.5 │  170.8 │   1% │        - │  645 MiB │                      │
+│     2 │       2 │     ok │  10.4 │      10.5 │  190.9 │  198.5 │   1% │        - │  476 MiB │ recommended, fastest │
+│     4 │       2 │     ok │   9.6 │       9.7 │  410.4 │  435.8 │   1% │        - │  1.3 GiB │                      │
+│     8 │       2 │     ok │   8.8 │       9.0 │  884.5 │  989.2 │   1% │        - │  2.6 GiB │                      │
+└───────┴─────────┴────────┴───────┴───────────┴────────┴────────┴──────┴──────────┴──────────┴──────────────────────┘
+Recommended: batch_size=2, num_workers=2 (10.4 img/s, peak -)
 Largest batch that fit: 8
-note: No out-of-memory up to batch 8; raise --max-batch-size (or list larger --batch-sizes) to find
-the memory ceiling.
+note: No out-of-memory up to batch 8; raise --max-batch-size (or list larger --batch-sizes) to find the memory ceiling.
 ```
 
-That sample is a real run on a CPU-only machine (two workers,
+That sample is a real run on the CPU (`--device cpu`, two workers,
 `--max-batch-size 8`), so the numbers are small. It still shows how the
-pick is made. Batch 4 was fastest, but batch 2 got within 5% of it at half
-the step latency, so batch 2 is recommended.
+pick is made. Throughput peaked at batch 2, and batch 1 didn't come within
+5% of it, so batch 2 is recommended. Larger batches only added latency.
+`Host mem` is how much host RAM each trial took.
 
 On a GPU, expect much higher `img/s` and a filled-in `Peak mem` column. You'll
-usually also see an `oom` line where the card runs out of memory.
+usually also see an `oom` line where the card runs out of memory, or a
+`host-oom` line if host RAM runs short first.
 
 ## 5. Read the result
 

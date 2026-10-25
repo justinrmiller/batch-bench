@@ -37,6 +37,8 @@ from batch_bench.devices import Accelerator, Backend
 transformers.logging.set_verbosity_error()
 transformers.logging.disable_progress_bar()
 
+GIB = 1024**3
+
 
 def _post_init(**kwargs: Any) -> dict[str, Any]:
     """Config kwargs consumed by ``__post_init__(**kwargs)``, which type checkers cannot see."""
@@ -152,6 +154,47 @@ def tiny_source() -> SyntheticImageSource:
 @pytest.fixture
 def cpu() -> Accelerator:
     return Accelerator(Backend.CPU)
+
+
+@pytest.fixture(autouse=True)
+def host_cache_releases(monkeypatch: pytest.MonkeyPatch) -> list[None]:
+    """Record ``torch.accelerator.empty_host_cache`` calls, so faked GPUs never reach the real one."""
+    calls: list[None] = []
+    monkeypatch.setattr(torch.accelerator, "empty_host_cache", lambda: calls.append(None))
+    return calls
+
+
+class FakeHostMemory:
+    """Stands in for :class:`batch_bench.hostmem.HostMemory`.
+
+    ``available`` returns the scripted readings in order, then repeats the
+    last one. The monitor thread reads it too, so tests should only rely on
+    which values appear, not on when.
+    """
+
+    def __init__(self, readings: list[int], total: int = 64 * GIB) -> None:
+        self.readings = list(readings)
+        self.total_bytes = total
+        self.reads = 0
+
+    def script(self, readings: list[int]) -> None:
+        """Start over with new readings."""
+        self.readings = list(readings)
+        self.reads = 0
+
+    def available(self) -> int:
+        value = self.readings[min(self.reads, len(self.readings) - 1)]
+        self.reads += 1
+        return value
+
+    def total(self) -> int:
+        return self.total_bytes
+
+
+@pytest.fixture
+def make_host_memory() -> Callable[..., FakeHostMemory]:
+    """Factory for fake host RAM with scripted ``available`` readings."""
+    return FakeHostMemory
 
 
 class FakeDeviceModule:

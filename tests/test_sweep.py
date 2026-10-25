@@ -8,12 +8,16 @@ from batch_bench.runner import TrialResult, TrialStatus
 from batch_bench.sweep import doubling_batch_sizes, midpoint, parse_int_list, sweep_batch_sizes
 
 
-def fake_trial(fits_up_to: int, errors: frozenset[int] = frozenset()) -> Callable[[int], TrialResult]:
-    """Pretend the device holds batches up to ``fits_up_to`` images."""
+def fake_trial(
+    fits_up_to: int, errors: frozenset[int] = frozenset(), host_fits_up_to: int | None = None
+) -> Callable[[int], TrialResult]:
+    """Pretend the device holds batches up to ``fits_up_to`` images, and host RAM up to ``host_fits_up_to``."""
 
     def trial(batch_size: int) -> TrialResult:
         if batch_size in errors:
             return TrialResult(batch_size, 0, TrialStatus.ERROR, error="boom")
+        if host_fits_up_to is not None and batch_size > host_fits_up_to:
+            return TrialResult(batch_size, 0, TrialStatus.HOST_OOM)
         if batch_size > fits_up_to:
             return TrialResult(batch_size, 0, TrialStatus.OOM)
         return TrialResult(batch_size, 0, TrialStatus.OK, samples_per_second=float(batch_size))
@@ -68,6 +72,14 @@ def test_sweep_stops_at_the_first_oom_then_bisects():
     # 1..256 fit, 512 OOMs; bisection tries 384 (OOM), 320 (OOM), 288 (fits).
     assert sizes(results) == [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 384, 320, 288]
     assert seen == results
+
+
+def test_running_out_of_host_ram_stops_and_bisects_like_a_device_oom():
+    trial = fake_trial(fits_up_to=10_000, host_fits_up_to=100)
+    results = sweep_batch_sizes(trial, doubling_batch_sizes(1, 1024), refine_steps=3)
+    # 1..64 fit, 128 runs out of host RAM; bisection tries 96 (fits), 112 and 104 (host OOM).
+    assert sizes(results) == [1, 2, 4, 8, 16, 32, 64, 128, 96, 112, 104]
+    assert results[7].status is TrialStatus.HOST_OOM
 
 
 def test_bisection_stops_when_no_size_is_left_between_the_bounds():

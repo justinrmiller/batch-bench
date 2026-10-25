@@ -45,6 +45,7 @@ CSV_FIELDS: tuple[str, ...] = (
     "data_wait_fraction",
     "peak_allocated_mib",
     "peak_reserved_mib",
+    "peak_host_mib",
     "recommended",
     "error",
 )
@@ -52,6 +53,7 @@ CSV_FIELDS: tuple[str, ...] = (
 _STATUS_STYLE: dict[TrialStatus, str] = {
     TrialStatus.OK: "green",
     TrialStatus.OOM: "red",
+    TrialStatus.HOST_OOM: "red",
     TrialStatus.ERROR: "yellow",
 }
 
@@ -158,6 +160,7 @@ def render_trial(console: Console, result: TrialResult) -> None:
             f"  step p50 {_fmt(result.latency_p50_ms, '.1f')} ms"
             f"  data wait {_fmt(result.data_wait_fraction, '.0%')}"
             f"  peak {format_bytes(result.peak_reserved_bytes)}"
+            f"  host {format_bytes(result.peak_host_bytes)}"
         )
     elif result.error:
         line += f"  {escape(result.error)}"
@@ -169,6 +172,7 @@ def render_model(console: Console, report: ModelReport, memory_budget_bytes: int
 
     ``Peak mem`` is shown as a share of ``memory_budget_bytes``: the memory
     this process could actually use, the same figure the headroom rule uses.
+    ``Host mem`` is how far free host RAM fell during the trial.
     """
     rec = report.recommendation
     title = escape(f"{report.spec.name} ({report.spec.task}, {report.spec.model_id})")
@@ -176,6 +180,7 @@ def render_model(console: Console, report: ModelReport, memory_budget_bytes: int
     for column in ("Batch", "Workers", "Status", "img/s", "Dev img/s", "p50 ms", "p95 ms", "Wait"):
         table.add_column(column, justify="right", no_wrap=True)
     table.add_column("Peak mem", justify="right")
+    table.add_column("Host mem", justify="right", no_wrap=True)
     table.add_column("", justify="left")
     for result in sorted(report.results, key=lambda r: (r.num_workers, r.batch_size)):
         style = _STATUS_STYLE[result.status]
@@ -197,6 +202,7 @@ def render_model(console: Console, report: ModelReport, memory_budget_bytes: int
             _fmt(result.latency_p95_ms, ".1f"),
             _fmt(result.data_wait_fraction, ".0%"),
             peak,
+            format_bytes(result.peak_host_bytes),
             ", ".join(marks),
         )
     console.print(table)
@@ -238,6 +244,7 @@ def _csv_row(model: ModelReport, result: TrialResult) -> dict[str, Any]:
         "data_wait_fraction": result.data_wait_fraction,
         "peak_allocated_mib": _mib(result.peak_allocated_bytes),
         "peak_reserved_mib": _mib(result.peak_reserved_bytes),
+        "peak_host_mib": _mib(result.peak_host_bytes),
         "recommended": result is recommended,
         "error": result.error,
     }

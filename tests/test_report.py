@@ -36,7 +36,7 @@ DEVICE = DeviceInfo(
 )
 
 
-def ok(batch_size: int, throughput: float, reserved: int = GIB) -> TrialResult:
+def ok(batch_size: int, throughput: float, reserved: int = GIB, host: int | None = None) -> TrialResult:
     return TrialResult(
         batch_size=batch_size,
         num_workers=8,
@@ -48,6 +48,7 @@ def ok(batch_size: int, throughput: float, reserved: int = GIB) -> TrialResult:
         data_wait_fraction=0.02,
         peak_allocated_bytes=reserved // 2,
         peak_reserved_bytes=reserved,
+        peak_host_bytes=host,
         measured_batches=16,
     )
 
@@ -56,7 +57,7 @@ def ok(batch_size: int, throughput: float, reserved: int = GIB) -> TrialResult:
 def model_report() -> ModelReport:
     results = [
         ok(16, 900.0),
-        ok(32, 1000.0, reserved=2 * GIB),
+        ok(32, 1000.0, reserved=2 * GIB, host=3 * GIB),
         TrialResult(64, 8, TrialStatus.OOM, error="OutOfMemoryError: HIP out of memory"),
     ]
     return ModelReport(
@@ -100,15 +101,17 @@ def test_render_device_for_cpu_omits_gpu_fields():
 
 def test_render_trial_lines():
     console = recording_console()
-    render_trial(console, ok(32, 1234.5))
+    render_trial(console, ok(32, 1234.5, host=5 * GIB))
     render_trial(console, TrialResult(64, 8, TrialStatus.OOM, error="HIP out of memory"))
     render_trial(console, TrialResult(128, 8, TrialStatus.OOM))
+    render_trial(console, TrialResult(256, 8, TrialStatus.HOST_OOM, error="skipped: needs about 40.0 GiB"))
     lines = console.export_text().splitlines()
     assert "1,234.5 img/s" in lines[0]
-    assert "peak 1.0 GiB" in lines[0]
+    assert "peak 1.0 GiB  host 5.0 GiB" in lines[0]
     assert "oom" in lines[1]
     assert "HIP out of memory" in lines[1]
     assert lines[2].rstrip().endswith("oom")
+    assert "host-oom  skipped: needs about 40.0 GiB" in lines[3]
 
 
 def test_render_model_marks_the_recommendation(model_report: ModelReport):
@@ -119,6 +122,8 @@ def test_render_model_marks_the_recommendation(model_report: ModelReport):
     assert "recommended" in text
     assert "fastest" in text
     assert "(6%)" in text  # 2 GiB of 32 GiB
+    assert "Host mem" in text
+    assert "3.0 GiB" in text
     assert "Recommended: batch_size=32, num_workers=8" in text
     assert "Largest batch that fit: 32, first OOM at 64" in text
 
@@ -188,6 +193,7 @@ def test_write_reports(tmp_path: Path, model_report: ModelReport):
     assert tuple(rows[0]) == CSV_FIELDS
     assert [row["recommended"] for row in rows] == ["False", "True", "False"]
     assert rows[1]["peak_reserved_mib"] == "2048.0"
+    assert (rows[0]["peak_host_mib"], rows[1]["peak_host_mib"]) == ("", "3072.0")
     assert rows[2]["error"] == "OutOfMemoryError: HIP out of memory"
 
 

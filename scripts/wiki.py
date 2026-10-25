@@ -348,10 +348,12 @@ def reproduce(run: Run) -> str:
         "refine_steps": ("--refine-steps", 3),
         "tolerance": ("--tolerance", 0.05),
         "memory_headroom": ("--memory-headroom", 0.1),
+        "host_memory_reserve": ("--host-memory-reserve", 0.1),
         "preprocess": ("--preprocess", "batch"),
         "mp_context": ("--mp-context", None),
     }
-    parts += [f"{flag} {s[key]}" for key, (flag, default) in defaults.items() if s.get(key) != default]
+    # Runs recorded before a setting existed used its default.
+    parts += [f"{flag} {s[key]}" for key, (flag, default) in defaults.items() if s.get(key, default) != default]
     # MPS runs are capped at 1.0 unless told otherwise, so that isn't a choice.
     fraction = s.get("memory_fraction")
     if fraction is not None and not (device["backend"] == "mps" and fraction == 1.0):
@@ -439,11 +441,24 @@ def results_table(run: Run) -> list[str]:
                 _fmt(r["latency_p95_ms"], ".1f"),
                 _fmt(r["data_wait_fraction"], ".0%"),
                 _peak(r, budget),
+                _bytes(r.get("peak_host_bytes")),  # absent from runs recorded before it was measured
                 ", ".join(marks),
             ]
         )
-    header = ["Batch", "Workers", "Status", "img/s", "Dev img/s", "p50 ms", "p95 ms", "Wait", "Peak mem", ""]
-    return _table(header, rows, "rrlrrrrrrl")
+    header = [
+        "Batch",
+        "Workers",
+        "Status",
+        "img/s",
+        "Dev img/s",
+        "p50 ms",
+        "p95 ms",
+        "Wait",
+        "Peak mem",
+        "Host mem",
+        "",
+    ]
+    return _table(header, rows, "rrlrrrrrrrl")
 
 
 def history(runs: list[Run]) -> list[str]:
