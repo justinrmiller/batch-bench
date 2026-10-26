@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import signal
+import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
+from torch.utils.data import DataLoader, TensorDataset
 
 from batch_bench import runner as runner_module
 from batch_bench.data import PreprocessMode, SyntheticImageSource
@@ -19,10 +24,12 @@ from batch_bench.runner import (
     TrialSettings,
     TrialStatus,
     effective_batch_counts,
+    kill_workers,
     resolve_precision,
 )
 
 FAST = TrialSettings(warmup_batches=1, measure_batches=2)
+GIB = 1024**3
 
 
 @pytest.fixture
@@ -59,6 +66,8 @@ class TestResolvePrecision:
         ({"warmup_batches": -1}, "warmup_batches"),
         ({"measure_batches": 0}, "measure_batches"),
         ({"prefetch_factor": 0}, "prefetch_factor"),
+        ({"host_memory_reserve": 1.0}, "host_memory_reserve"),
+        ({"host_memory_reserve": -0.1}, "host_memory_reserve"),
     ],
 )
 def test_settings_are_validated(kwargs: dict[str, object], message: str):
@@ -90,6 +99,11 @@ def test_trial_result_to_dict():
     assert data["status"] == "oom"
     assert data["batch_size"] == 4
     assert data["error"] == "boom"
+    assert data["peak_host_bytes"] is None
+
+
+def test_device_and_host_oom_both_mean_out_of_memory():
+    assert [status for status in TrialStatus if status.out_of_memory] == [TrialStatus.OOM, TrialStatus.HOST_OOM]
 
 
 class TestInference:
@@ -207,7 +221,114 @@ def test_peak_memory_comes_from_the_accelerator(segmenter, make_device_module, t
     assert (result.peak_allocated_bytes, result.peak_reserved_bytes) == (100, 200)
     names = [name for name, _ in module.calls]
     assert "reset_peak_memory_stats" in names
-    assert names.count("synchronize") == 3  # one per warmup + measured batch
+    # One per warmup + measured batch, and one per cache release before and after the trial.
+    assert names.count("synchronize") == 5
+
+
+class TestHostMemory:
+    """Host RAM is measured and guarded; the fake host has 64 GiB, so the default reserve is 6.4 GiB."""
+
+    def test_trial_reports_how_far_free_host_ram_fell(self, segmenter, cpu, tiny_source, make_host_memory):
+        host = make_host_memory([40 * GIB, 37 * GIB])
+        result = TrialRunner(segmenter, cpu, tiny_source, FAST, host=host)(batch_size=2, num_workers=0)
+        assert result.ok, result.error
+        assert result.peak_host_bytes == 3 * GIB
+
+    def test_trial_is_stopped_when_free_ram_falls_into_the_reserve(self, segmenter, cpu, tiny_source, make_host_memory):
+        host = make_host_memory([40 * GIB, 40 * GIB, 2 * GIB])
+        result = TrialRunner(segmenter, cpu, tiny_source, FAST, host=host)(batch_size=2, num_workers=0)
+        assert result.status is TrialStatus.HOST_OOM
+        assert result.error == "stopped: free host RAM fell below the 6.4 GiB reserve"
+        assert result.peak_host_bytes == 38 * GIB
+        assert result.samples_per_second is None
+
+    def test_monitor_thread_kills_the_workers_mid_step(
+        self, segmenter, cpu, tiny_source, make_host_memory, monkeypatch
+    ):
+        host = make_host_memory([40 * GIB])
+        killed = threading.Event()
+        workers: list[Any] = []
+
+        def spy_kill(batches: Any) -> None:
+            workers.extend(batches._workers)
+            kill_workers(batches)
+            killed.set()
+
+        original = runner_module.make_forward
+
+        def make_slow_forward(task, model, compile_model=False):
+            forward = original(task, model, compile_model=compile_model)
+
+            def slow_forward(batch):
+                host.script([2 * GIB])  # memory runs low while this step is on the device
+                assert killed.wait(timeout=5)
+                return forward(batch)
+
+            return slow_forward
+
+        monkeypatch.setattr(runner_module, "kill_workers", spy_kill)
+        monkeypatch.setattr(runner_module, "make_forward", make_slow_forward)
+        result = TrialRunner(segmenter, cpu, tiny_source, FAST, host=host)(batch_size=1, num_workers=2)
+        assert result.status is TrialStatus.HOST_OOM, result.error
+        assert [worker.exitcode for worker in workers] == [-signal.SIGKILL] * 2
+
+    def test_batches_projected_to_exhaust_host_ram_are_skipped(self, segmenter, cpu, tiny_source, make_host_memory):
+        host = make_host_memory([40 * GIB, 30 * GIB])  # batch 2 takes 10 GiB
+        runner = TrialRunner(segmenter, cpu, tiny_source, FAST, host=host)
+        assert runner(batch_size=2, num_workers=0).ok
+        host.script([40 * GIB])
+        # Batch 8 would need 4 x 10 GiB, more than the 33.6 GiB above the reserve.
+        skipped = runner(batch_size=8, num_workers=0)
+        assert skipped.status is TrialStatus.HOST_OOM
+        assert skipped.error == (
+            "skipped: needs about 40.0 GiB of host RAM (scaled from batch 2), "
+            "33.6 GiB is free above the 6.4 GiB reserve"
+        )
+        assert skipped.peak_host_bytes is None
+        # Projections are per worker count, and a smaller multiple still fits.
+        assert runner(batch_size=8, num_workers=1).ok
+        assert runner(batch_size=4, num_workers=0).ok
+        # Projections scale from the largest trial, so a smaller one doesn't replace it.
+        assert runner(batch_size=1, num_workers=0).ok
+        assert runner._host_reference[0].batch_size == 4
+
+    @pytest.mark.filterwarnings("ignore:'pin_memory' argument is set as true:UserWarning")
+    def test_projection_rounds_pinned_batches_up_to_powers_of_two(
+        self, segmenter, make_device_module, tiny_source, make_host_memory, monkeypatch
+    ):
+        module = make_device_module()
+        module.host_stats = {"allocated_bytes.peak": 4 * GIB}
+        monkeypatch.setattr(Accelerator, "device", property(lambda self: torch.device("cpu")))
+        host = make_host_memory([40 * GIB, 30 * GIB])  # batch 2 takes 10 GiB, 4 GiB of it pinned
+        runner = TrialRunner(segmenter, Accelerator(Backend.CUDA, module=module), tiny_source, FAST, host=host)
+        assert runner(batch_size=2, num_workers=0).ok
+        # Batch 2 is one 96 KiB tensor, pinned as a 128 KiB block. Batch 3's 144 KiB needs a 256 KiB block,
+        # so it needs 2 x 4 GiB pinned plus 1.5 x the other 6 GiB: 17 GiB, where linear scaling says 15.
+        host.script([int(22.4 * GIB)])  # 16 GiB free above the 6.4 GiB reserve
+        skipped = runner(batch_size=3, num_workers=0)
+        assert skipped.status is TrialStatus.HOST_OOM
+        assert skipped.error is not None
+        assert "needs about 17.0 GiB" in skipped.error
+
+    def test_zero_reserve_never_stops_a_trial(self, segmenter, cpu, tiny_source, make_host_memory):
+        settings = replace(FAST, host_memory_reserve=0.0)
+        host = make_host_memory([40 * GIB, 1])
+        assert TrialRunner(segmenter, cpu, tiny_source, settings, host=host)(batch_size=1, num_workers=0).ok
+
+
+def test_kill_workers_leaves_no_signal_to_raise_later():
+    batches: Any = iter(DataLoader(TensorDataset(torch.arange(64)), batch_size=2, num_workers=2))
+    next(batches)
+    workers = list(batches._workers)
+    kill_workers(batches)
+    # DataLoader's SIGCHLD handler would raise in here if the workers were still registered.
+    for _ in range(20):
+        time.sleep(0.01)
+    for worker in workers:
+        worker.join(timeout=5)
+    assert [worker.exitcode for worker in workers] == [-signal.SIGKILL] * 2
+    del batches  # shutting the iterator down must not raise either
+    kill_workers(iter(DataLoader(TensorDataset(torch.arange(2)))))  # single-process loaders have no workers
 
 
 def test_close_moves_the_model_back_to_cpu(segmenter, cpu, tiny_source: SyntheticImageSource):

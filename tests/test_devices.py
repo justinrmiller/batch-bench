@@ -138,7 +138,7 @@ class TestArchWarnings:
 
 
 class TestCudaLikeAccelerator:
-    def test_memory_and_sync_calls_target_the_device_index(self, make_device_module):
+    def test_memory_and_sync_calls_target_the_device_index(self, make_device_module, host_cache_releases):
         module = make_device_module()
         accel = Accelerator(Backend.CUDA, index=1, module=module)
         accel.activate()
@@ -150,9 +150,12 @@ class TestCudaLikeAccelerator:
             ("set_device", (1,)),
             ("synchronize", (1,)),
             ("reset_peak_memory_stats", (1,)),
+            ("reset_peak_host_memory_stats", ()),
             ("empty_cache", ()),
+            ("synchronize", (1,)),  # pinned host blocks are only freed once the device catches up
             ("set_per_process_memory_fraction", (0.5, 1)),
         ]
+        assert len(host_cache_releases) == 1
         assert accel.device == torch.device("cuda", 1)
         assert accel.has_peak_counters
         assert accel.supports_pin_memory
@@ -241,6 +244,28 @@ class TestMpsAccelerator:
         assert not accel.supports_pin_memory
         assert not accel.has_peak_counters
 
+    def test_peak_pinned_memory_comes_from_the_host_allocator(self, make_device_module):
+        module = make_device_module()
+        rocm = Accelerator(Backend.ROCM, module=module)
+        assert rocm.peak_pinned_memory() is None  # no pinned allocation yet
+        module.host_stats = {"allocated_bytes.peak": 3 * 1024**3}
+        assert rocm.peak_pinned_memory() == 3 * 1024**3
+        # torch.xpu reports no host allocator stats.
+        assert Accelerator(Backend.XPU, module=module).peak_pinned_memory() is None
+
+    def test_mps_empties_its_cache_without_pinned_memory(self, make_mps_module, host_cache_releases):
+        module = make_mps_module([])
+        Accelerator(Backend.MPS, module=module).empty_cache()
+        assert module.calls == [("empty_cache", ())]
+        assert not host_cache_releases
+
+    def test_host_cache_release_errors_are_ignored(self, make_device_module, monkeypatch):
+        def unsupported() -> None:
+            raise RuntimeError("no host caching allocator")
+
+        monkeypatch.setattr(torch.accelerator, "empty_host_cache", unsupported)
+        Accelerator(Backend.XPU, module=make_device_module()).empty_cache()
+
     def test_mps_info(self, make_mps_module):
         info = Accelerator(Backend.MPS, module=make_mps_module([])).info()
         assert info.backend is Backend.MPS
@@ -253,13 +278,15 @@ class TestCpuAccelerator:
     def test_cpu_has_no_device_memory_figures(self, cpu: Accelerator):
         assert cpu.free_memory() is None
 
-    def test_cpu_has_no_device_memory(self, cpu: Accelerator):
+    def test_cpu_has_no_device_memory(self, cpu: Accelerator, host_cache_releases):
         cpu.activate()
         cpu.synchronize()
         cpu.sample_memory()
         cpu.reset_peak_memory()
         cpu.empty_cache()
+        assert not host_cache_releases  # nothing is pinned without a GPU
         assert cpu.peak_memory() == devices.MemoryStats(allocated=None, reserved=None)
+        assert cpu.peak_pinned_memory() is None
         assert cpu.total_memory() is None
         assert cpu.device == torch.device("cpu")
         assert cpu.supports_bf16()

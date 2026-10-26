@@ -43,6 +43,7 @@ class TestParser:
         assert (args.min_batch_size, args.max_batch_size) == (1, 1024)
         assert args.num_workers == [default_num_workers()]
         assert args.output_dir == Path("results")
+        assert args.host_memory_reserve == pytest.approx(0.1)
 
     def test_lists_are_parsed(self):
         args = build_parser().parse_args(
@@ -67,6 +68,7 @@ class TestParser:
             ["--tolerance", "lots"],
             ["--memory-fraction", "0"],
             ["--memory-fraction", "all"],
+            ["--host-memory-reserve", "1.0"],
             ["--image-size", "big"],
             ["--device", "tpu"],
             ["--task", "classification"],
@@ -177,10 +179,12 @@ def test_run_end_to_end(tiny_segmenter_dir: Path, tmp_path: Path, capsys: pytest
     assert data["settings"]["batch_sizes"] == [1, 2]
     assert data["settings"]["image_size"] == [64, 48]
     assert data["settings"]["precision"] == "fp32"
+    assert data["settings"]["host_memory_reserve"] == pytest.approx(0.1)
     (model,) = data["models"]
     assert model["task"] == "image-segmentation"
     assert model["parameters"] > 0
     assert [r["status"] for r in model["results"]] == ["ok", "ok"]
+    assert all(r["peak_host_bytes"] is not None for r in model["results"])
     assert model["recommendation"]["recommended"]["batch_size"] in (1, 2)
 
     (csv_path,) = tmp_path.glob("*-cpu0.csv")

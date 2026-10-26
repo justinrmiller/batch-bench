@@ -32,6 +32,10 @@ def oom(batch_size: int) -> TrialResult:
     return TrialResult(batch_size=batch_size, num_workers=4, status=TrialStatus.OOM)
 
 
+def host_oom(batch_size: int) -> TrialResult:
+    return TrialResult(batch_size=batch_size, num_workers=4, status=TrialStatus.HOST_OOM)
+
+
 def test_nothing_to_recommend_without_a_completed_trial():
     assert recommend([]) is None
     assert recommend([oom(1), TrialResult(2, 4, TrialStatus.ERROR, error="x")]) is None
@@ -99,6 +103,16 @@ def test_missing_oom_suggests_a_larger_sweep():
         "No out-of-memory up to batch 2; raise --max-batch-size (or list larger --batch-sizes) "
         "to find the memory ceiling.",
         "Throughput was still highest at the largest batch tested.",
+    )
+
+
+def test_host_ram_limits_are_called_out_instead_of_a_larger_sweep():
+    rec = recommend([ok(1, 10), ok(2, 30), host_oom(8), host_oom(4)], max_tested=1024)
+    assert rec is not None
+    assert rec.first_oom is None  # first_oom is about device memory
+    assert rec.notes == (
+        "Host RAM ran short at batch 4. Fewer workers (--num-workers), --prefetch-factor 1 or "
+        "--no-pin-memory need less host memory.",
     )
 
 

@@ -12,6 +12,7 @@ benchmark loop never branches on the backend.
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import platform
 import re
@@ -275,6 +276,11 @@ class Accelerator:
         return self.backend in (Backend.CUDA, Backend.ROCM, Backend.XPU)
 
     @property
+    def has_host_memory_stats(self) -> bool:
+        """Whether the pinned host allocator reports its usage (CUDA, ROCm)."""
+        return self.backend in (Backend.CUDA, Backend.ROCM)
+
+    @property
     def supports_cudnn_benchmark(self) -> bool:
         """Whether cuDNN (NVIDIA) or MIOpen (ROCm) can autotune convolution kernels."""
         return self.backend in (Backend.CUDA, Backend.ROCM)
@@ -292,16 +298,25 @@ class Accelerator:
             self._module.synchronize(self.index)
 
     def empty_cache(self) -> None:
-        """Collect garbage and return cached allocator blocks to the driver."""
+        """Collect garbage and return cached device and pinned host memory to the driver."""
         gc.collect()
         if self._module is not None:
             self._module.empty_cache()
+        if self.supports_pin_memory:
+            # Pinned batches stay cached, rounded up to a power of two, until released:
+            # without this, each batch size of a sweep keeps its own set of blocks. Freed
+            # blocks are only returned once the device has caught up with them.
+            self.synchronize()
+            with contextlib.suppress(RuntimeError):  # a build without a host caching allocator
+                torch.accelerator.empty_host_cache()
 
     def reset_peak_memory(self) -> None:
-        """Start a fresh peak-memory window."""
+        """Start a fresh peak-memory window, for device and pinned host memory."""
         self._sampled_reserved = 0
         if self.has_peak_counters:
             self._module.reset_peak_memory_stats(self.index)
+        if self.has_host_memory_stats:
+            self._module.reset_peak_host_memory_stats()
 
     def sample_memory(self) -> None:
         """Poll memory use; only needed on MPS, which has no peak counters.
@@ -323,6 +338,16 @@ class Accelerator:
         if self.backend is Backend.MPS:
             return MemoryStats(allocated=None, reserved=self._sampled_reserved or None)
         return MemoryStats(allocated=None, reserved=None)
+
+    def peak_pinned_memory(self) -> int | None:
+        """Most pinned host memory held since :meth:`reset_peak_memory`; None where unknown.
+
+        It counts whole allocator blocks, which are rounded up to powers of two.
+        """
+        if not self.has_host_memory_stats:
+            return None
+        peak = self._module.host_memory_stats().get("allocated_bytes.peak")
+        return None if peak is None else int(peak)
 
     def free_memory(self) -> int | None:
         """Device memory free right now, as the driver reports it; None on MPS and CPU.

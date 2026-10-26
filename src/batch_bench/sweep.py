@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from batch_bench.runner import TrialResult, TrialStatus
+from batch_bench.runner import TrialResult
 
 TrialFn = Callable[[int], TrialResult]
 
@@ -56,10 +56,11 @@ def sweep_batch_sizes(
 ) -> list[TrialResult]:
     """Run ``trial`` over ``batch_sizes`` in ascending order.
 
-    The sweep stops at the first out-of-memory batch size, since larger ones
-    cannot fit either. Up to ``refine_steps`` bisection trials then narrow the
-    gap between the largest batch that fit and the smallest that did not.
-    Non-OOM errors are recorded and the sweep continues.
+    The sweep stops at the first batch size that runs out of memory, on the
+    device or in host RAM, since larger ones cannot fit either. Up to
+    ``refine_steps`` bisection trials then narrow the gap between the largest
+    batch that fit and the smallest that did not. Other errors are recorded and
+    the sweep continues.
 
     Args:
         trial: Runs one batch size and returns its result.
@@ -85,7 +86,7 @@ def sweep_batch_sizes(
     first_oom: int | None = None
     for size in sorted(set(batch_sizes)):
         result = run(size)
-        if result.status is TrialStatus.OOM:
+        if result.status.out_of_memory:
             first_oom = size
             break
         if result.ok:
@@ -101,7 +102,7 @@ def sweep_batch_sizes(
         result = run(mid)
         if result.ok:
             low = mid
-        elif result.status is TrialStatus.OOM:
+        elif result.status.out_of_memory:
             high = mid
         else:
             break

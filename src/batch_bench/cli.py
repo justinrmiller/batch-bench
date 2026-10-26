@@ -282,6 +282,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.10,
         help="fraction of the usable memory (see --memory-fraction) the recommendation leaves free",
     )
+    sweep.add_argument(
+        "--host-memory-reserve",
+        type=_fraction,
+        default=0.10,
+        help="fraction of host RAM to keep free: batch sizes projected to need more are skipped "
+        "and a trial that cuts into it is stopped",
+    )
 
     data = run.add_argument_group("data")
     data.add_argument(
@@ -470,6 +477,7 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
         compile_model=args.compile,
         cudnn_benchmark=autotune,
         mp_context=args.mp_context,
+        host_memory_reserve=args.host_memory_reserve,
     )
     if args.batch_sizes is None and args.max_batch_size < args.min_batch_size:
         raise ValueError("--max-batch-size must be >= --min-batch-size")

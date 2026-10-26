@@ -17,7 +17,8 @@ For every batch size it reports:
 - device-only throughput,
 - step latency,
 - how long the GPU sat waiting for data,
-- peak device memory.
+- peak device memory,
+- how much host RAM the trial took.
 
 Timing the model alone overstates the useful batch size whenever the CPU side
 can't keep up. This tool catches that case and tells you.
@@ -147,6 +148,7 @@ If two runs start in the same second, say one per GPU, the second gets a
 | `p50 ms` / `p95 ms` | Device step time per batch: copy, forward, plus backward and optimizer step in training mode. |
 | `Wait` | Share of wall time spent blocked on the DataLoader. |
 | `Peak mem` | Peak memory held by the caching allocator, which is what runs out first, with its share of the usable memory. |
+| `Host mem` | How far free host RAM fell during the trial: DataLoader workers, batches waiting in the queue, and anything else running at the time. On Apple Silicon it includes GPU memory, which is system memory there. |
 
 Patterns worth recognising:
 
@@ -161,9 +163,13 @@ Patterns worth recognising:
 - **`img/s` drops at the largest sizes.** The allocator is fighting
   fragmentation, or (on MPS) the system is under memory pressure. Stay below
   that point.
+- **A trial shows `host-oom`.** Host RAM, not GPU memory, ran short, so the
+  sweep stopped there as it would at an `oom`. See
+  [Troubleshooting](#troubleshooting).
 - **Notes under the table** flag runs that were input-bound, recommendations
-  that skipped a faster run because of the memory headroom, and sweeps that
-  never hit out-of-memory (the ceiling is higher than you tested).
+  that skipped a faster run because of the memory headroom, sweeps that
+  never hit out-of-memory (the ceiling is higher than you tested), and
+  sweeps that host RAM cut short.
 
 ## Options
 
@@ -204,6 +210,7 @@ With neither `-m` nor `-t`, the default preset of every task runs.
 | `--prefetch-factor` | `2` | Batches each worker prepares ahead. Also sets how long warmup takes to empty the queue. |
 | `--tolerance` | `0.05` | How far below peak throughput the recommendation may be. |
 | `--memory-headroom` | `0.10` | Share of usable memory the recommendation leaves free. |
+| `--host-memory-reserve` | `0.10` | Share of host RAM to keep free. Batch sizes projected to need more are skipped, and a trial that cuts into it is stopped. Both show as `host-oom`. |
 
 **Data**
 
@@ -283,6 +290,27 @@ With neither `-m` nor `-t`, the default preset of every task runs.
   cuDNN/cuBLAS, MPS and Level Zero. The allocator cache is emptied before
   the next trial. Other errors are recorded as `error`, and the sweep
   carries on.
+- **Host RAM is measured and guarded.** It grows with batch size × workers.
+  Each worker decodes and preprocesses a whole batch at once, and up to
+  `prefetch_factor × num_workers` finished batches wait in the main process.
+  On CUDA, ROCm and XPU those are pinned, and PyTorch rounds each pinned
+  buffer up to a power of two, so a 588 MiB batch takes 1 GiB. A sweep can
+  therefore run out of host RAM long before the GPU fills, and the kernel's
+  OOM killer may then take the desktop session down with it. To prevent
+  that:
+  - Free memory is read every 50 ms and after every step. It's system RAM,
+    or the room left under a cgroup memory cap (a container's limit, or
+    `systemd-run -p MemoryMax=`) when that's tighter. `Host mem` is how far
+    it fell below its level at the start of the trial.
+  - Before a larger batch runs, its need is projected from the largest
+    successful trial with the same worker count. Most of it scales with the
+    batch size; pinned batches grow in power-of-two steps, as the allocator
+    rounds them (CUDA and ROCm report how much was pinned). If it won't fit
+    above `--host-memory-reserve`, the trial is skipped.
+  - If free memory falls into the reserve anyway, the trial's workers are
+    killed at once.
+  - Pinned buffers are released between trials, so each batch size doesn't
+    keep its own cached set.
 - **The timing logic is itself tested.** `tests/test_methodology.py` builds
   pipelines with known throughput (sleeping loaders and models) and checks
   that the measured images/s and data-wait share match theory. In practice
@@ -357,6 +385,7 @@ With neither `-m` nor `-t`, the default preset of every task runs.
 | `note: Input-bound` | The CPU side is the bottleneck. Try higher `--num-workers` counts, faster image storage, or smaller source images. |
 | The first trials on ROCm are very slow | That's MIOpen's kernel search, and it's cached afterwards. Use `MIOPEN_FIND_MODE=FAST` or `--no-cudnn-benchmark`. |
 | A Mac becomes sluggish at large batches | It's swapping. Make sure you haven't raised `PYTORCH_MPS_HIGH_WATERMARK_RATIO`, and lower `--max-batch-size` or `--num-workers`. |
+| Trials show `host-oom` | Host RAM ran short; the trial's message says whether it was skipped or stopped. Each worker holds a whole batch, and up to `--prefetch-factor` × workers more wait in the queue. Lower `--num-workers`, or pass `--prefetch-factor 1` or `--no-pin-memory`. On Linux, `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 uv run batch-bench run …` adds a hard cap, so a runaway run can only kill itself. The guard sees the cap and works within it. |
 | `failed to load: … 401` / gated repo | Accept the model's license on the Hub, then set `HF_TOKEN` or run `uv run hf auth login`. |
 | `cannot infer the task for …` | Add `--task object-detection` (or `image-segmentation` / `embedding`). |
 | Trials show `error` | Read the message in the table. In `--mode training`, batch size 1 can fail in layers that need more than one value per channel. The sweep moves on to larger sizes. If every size fails, try `--precision fp32` to rule out a dtype problem. |
