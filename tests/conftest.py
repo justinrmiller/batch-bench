@@ -208,6 +208,7 @@ class FakeDeviceModule:
         self.allocated = 100
         self.reserved = 200
         self.free = props.total_memory // 2
+        self.host_stats: dict[str, int] = {}
 
     def _record(self, name: str, *args: Any) -> None:
         self.calls.append((name, args))
@@ -223,6 +224,12 @@ class FakeDeviceModule:
 
     def reset_peak_memory_stats(self, index: int) -> None:
         self._record("reset_peak_memory_stats", index)
+
+    def reset_peak_host_memory_stats(self) -> None:
+        self._record("reset_peak_host_memory_stats")
+
+    def host_memory_stats(self) -> dict[str, int]:
+        return dict(self.host_stats)
 
     def max_memory_allocated(self, index: int) -> int:
         return self.allocated

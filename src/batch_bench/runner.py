@@ -16,7 +16,7 @@ from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
 
 from batch_bench.data import ImageDataset, ImageSource, PreprocessMode, build_loader
 from batch_bench.devices import Accelerator, Backend, is_oom_error
-from batch_bench.hostmem import HostMemory, HostMemoryMonitor
+from batch_bench.hostmem import HostFootprint, HostMemory, HostMemoryMonitor
 from batch_bench.models import LoadedModel, make_forward, primary_output, surrogate_loss
 
 
@@ -235,8 +235,8 @@ class TrialRunner:
         self.host = host or HostMemory()
         # Trials stop once free host RAM falls below this.
         self.host_floor = int(self.host.total() * settings.host_memory_reserve)
-        # Largest successful (batch size, peak host bytes) per worker count, for projections.
-        self._host_reference: dict[int, tuple[int, int]] = {}
+        # The largest successful trial per worker count, to project host RAM from.
+        self._host_reference: dict[int, HostFootprint] = {}
         # Per-sample output shape (e.g. (512,) for an embedding), set by the first step.
         self.output_shape: tuple[int, ...] | None = None
         if accelerator.supports_cudnn_benchmark:
@@ -278,6 +278,7 @@ class TrialRunner:
         status, error = TrialStatus.OK, None
         batches: Any = None
         step: Step | None = None
+        tensor_bytes: tuple[int, ...] = ()  # of the largest batch
 
         def stop_workers() -> None:
             # Runs on the monitor thread; the DataLoader then raises on this one.
@@ -300,6 +301,7 @@ class TrialRunner:
                     if index >= warmup:
                         waits.append(fetched - fetch_start)
                         computes.append(finished - fetched)
+                    tensor_bytes = max(tensor_bytes, tuple(value.nbytes for value in batch.values()), key=sum)
                     monitor.sample()
                     if monitor.tripped:
                         break
@@ -310,6 +312,7 @@ class TrialRunner:
             status = TrialStatus.HOST_OOM
             error = f"stopped: free host RAM fell below the {_gib(self.host_floor)} reserve"
         peak_host = monitor.peak_bytes
+        peak_pinned = accelerator.peak_pinned_memory() or 0
         memory = accelerator.peak_memory()
         # Shut DataLoader workers down and free activations and optimizer state.
         batches = None  # rebound, not deleted: stop_workers refers to it
@@ -327,8 +330,8 @@ class TrialRunner:
                 error=error,
             )
         reference = self._host_reference.get(num_workers)
-        if reference is None or batch_size >= reference[0]:
-            self._host_reference[num_workers] = (batch_size, peak_host)
+        if reference is None or batch_size >= reference.batch_size:
+            self._host_reference[num_workers] = HostFootprint(batch_size, peak_host, peak_pinned, tensor_bytes)
         wall = finished - started
         median_compute = float(np.median(computes))
         return TrialResult(
@@ -349,21 +352,19 @@ class TrialRunner:
     def _host_shortfall(self, batch_size: int, num_workers: int) -> str | None:
         """Why ``batch_size`` would exhaust host RAM, or None if it should fit.
 
-        Queued batches and the batches workers are building grow linearly with
-        the batch size, so the projection scales the largest successful trial
-        with the same worker count. Until one exists nothing is skipped, but
-        the monitor still stops a trial that runs low.
+        The need is projected from the largest successful trial with the same
+        worker count (see :meth:`HostFootprint.project`). Until one exists
+        nothing is skipped, but the monitor still stops a trial that runs low.
         """
         reference = self._host_reference.get(num_workers)
-        if reference is None or batch_size <= reference[0]:
+        if reference is None or batch_size <= reference.batch_size:
             return None
-        reference_batch, reference_peak = reference
-        needed = reference_peak * batch_size // reference_batch
+        needed = reference.project(batch_size)
         room = max(0, self.host.available() - self.host_floor)
         if needed <= room:
             return None
         return (
-            f"skipped: needs about {_gib(needed)} of host RAM (scaled from batch {reference_batch}), "
+            f"skipped: needs about {_gib(needed)} of host RAM (scaled from batch {reference.batch_size}), "
             f"{_gib(room)} is free above the {_gib(self.host_floor)} reserve"
         )
 

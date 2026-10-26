@@ -1,4 +1,4 @@
-"""Host RAM: how much is free, and a per-trial monitor that measures and guards it.
+"""Host RAM: how much is free, a per-trial monitor, and projections for larger batches.
 
 Host memory grows with the batch size times the worker count. Every DataLoader
 worker builds a whole batch, and up to ``prefetch_factor * num_workers``
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
@@ -87,6 +88,48 @@ class HostMemory:
     def total(self) -> int:
         """Physical RAM, or the tightest cgroup cap if that is smaller."""
         return min([int(psutil.virtual_memory().total), *(limit for _, limit in self._cgroup_limits)])
+
+
+def round_up_to_power_of_two(value: int) -> int:
+    """``value`` rounded up as PyTorch's caching host allocator rounds a pinned buffer."""
+    return 1 << (value - 1).bit_length() if value > 0 else 0
+
+
+@dataclass(frozen=True)
+class HostFootprint:
+    """How much host RAM a successful trial took, to project larger batches from.
+
+    Attributes:
+        batch_size: The trial's batch size.
+        peak_bytes: How far free host RAM fell during it.
+        pinned_bytes: The part of that held as pinned memory at most, in whole
+            allocator blocks; 0 when nothing was pinned or the backend can't tell.
+        tensor_bytes: Size of each tensor in one batch; each is pinned separately.
+    """
+
+    batch_size: int
+    peak_bytes: int
+    pinned_bytes: int = 0
+    tensor_bytes: tuple[int, ...] = ()
+
+    def project(self, batch_size: int) -> int:
+        """Host RAM a trial at ``batch_size`` should take.
+
+        Most of the footprint grows linearly with the batch: the batches
+        workers are building, and batches in shared memory. Pinned
+        batches grow in steps instead, because the allocator rounds each
+        tensor's buffer up to a power of two. A batch 1.75x the size can need
+        twice the pinned memory, and one 1.25x the size may need no more.
+        """
+        scale = batch_size / self.batch_size
+        per_batch = sum(round_up_to_power_of_two(size) for size in self.tensor_bytes)
+        if not (self.pinned_bytes and per_batch):
+            return int(self.peak_bytes * scale)
+        batches = self.pinned_bytes / per_batch  # pinned at once, e.g. a full prefetch queue
+        pinned = batches * sum(
+            round_up_to_power_of_two(size * batch_size // self.batch_size) for size in self.tensor_bytes
+        )
+        return int(max(0, self.peak_bytes - self.pinned_bytes) * scale + pinned)
 
 
 class HostMemoryMonitor:

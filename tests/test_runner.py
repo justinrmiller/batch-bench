@@ -290,7 +290,25 @@ class TestHostMemory:
         assert runner(batch_size=4, num_workers=0).ok
         # Projections scale from the largest trial, so a smaller one doesn't replace it.
         assert runner(batch_size=1, num_workers=0).ok
-        assert runner._host_reference[0][0] == 4
+        assert runner._host_reference[0].batch_size == 4
+
+    @pytest.mark.filterwarnings("ignore:'pin_memory' argument is set as true:UserWarning")
+    def test_projection_rounds_pinned_batches_up_to_powers_of_two(
+        self, segmenter, make_device_module, tiny_source, make_host_memory, monkeypatch
+    ):
+        module = make_device_module()
+        module.host_stats = {"allocated_bytes.peak": 4 * GIB}
+        monkeypatch.setattr(Accelerator, "device", property(lambda self: torch.device("cpu")))
+        host = make_host_memory([40 * GIB, 30 * GIB])  # batch 2 takes 10 GiB, 4 GiB of it pinned
+        runner = TrialRunner(segmenter, Accelerator(Backend.CUDA, module=module), tiny_source, FAST, host=host)
+        assert runner(batch_size=2, num_workers=0).ok
+        # Batch 2 is one 96 KiB tensor, pinned as a 128 KiB block. Batch 3's 144 KiB needs a 256 KiB block,
+        # so it needs 2 x 4 GiB pinned plus 1.5 x the other 6 GiB: 17 GiB, where linear scaling says 15.
+        host.script([int(22.4 * GIB)])  # 16 GiB free above the 6.4 GiB reserve
+        skipped = runner(batch_size=3, num_workers=0)
+        assert skipped.status is TrialStatus.HOST_OOM
+        assert skipped.error is not None
+        assert "needs about 17.0 GiB" in skipped.error
 
     def test_zero_reserve_never_stops_a_trial(self, segmenter, cpu, tiny_source, make_host_memory):
         settings = replace(FAST, host_memory_reserve=0.0)
