@@ -349,10 +349,10 @@ class TrialRunner:
     def _host_shortfall(self, batch_size: int, num_workers: int) -> str | None:
         """Why ``batch_size`` would exhaust host RAM, or None if it should fit.
 
-        Queued batches and the workers' decoded images grow linearly with the
-        batch size, so the projection scales the largest successful trial with
-        the same worker count. Until one exists nothing is skipped, but the
-        monitor still stops a trial that runs low.
+        Queued batches and the batches workers are building grow linearly with
+        the batch size, so the projection scales the largest successful trial
+        with the same worker count. Until one exists nothing is skipped, but
+        the monitor still stops a trial that runs low.
         """
         reference = self._host_reference.get(num_workers)
         if reference is None or batch_size <= reference[0]:

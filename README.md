@@ -218,7 +218,7 @@ With neither `-m` nor `-t`, the default preset of every task runs.
 | --- | --- | --- |
 | `--image-dir` | synthetic | Benchmark on your images (`.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`, recursive), read in a seeded random order. |
 | `--image-size` | `640x480` | Size of synthetic images. With `--image-dir`, resize your images to it. |
-| `--preprocess` | `batch` | Run the image processor per batch (in `collate_fn`) or per sample (in `__getitem__`). |
+| `--preprocess` | `batch` | Run the image processor per batch (in `collate_fn`, 32 images per call) or per sample (in `__getitem__`). |
 | `--no-pin-memory` | | Disable pinned host memory (CUDA, ROCm, XPU). |
 | `--mp-context` | platform default | Worker start method: `fork`, `spawn` or `forkserver`. |
 | `--seed` | `0` | Seed for the synthetic images and for the order of `--image-dir` files. |
@@ -291,13 +291,12 @@ With neither `-m` nor `-t`, the default preset of every task runs.
   the next trial. Other errors are recorded as `error`, and the sweep
   carries on.
 - **Host RAM is measured and guarded.** It grows with batch size × workers.
-  Each worker decodes and preprocesses a whole batch at once, and up to
-  `prefetch_factor × num_workers` finished batches wait in the main process.
-  On CUDA, ROCm and XPU those are pinned, and PyTorch rounds each pinned
-  buffer up to a power of two, so a 588 MiB batch takes 1 GiB. A sweep can
-  therefore run out of host RAM long before the GPU fills, and the kernel's
-  OOM killer may then take the desktop session down with it. To prevent
-  that:
+  Each worker builds a whole batch, and up to `prefetch_factor × num_workers`
+  finished batches wait in the main process. On CUDA, ROCm and XPU those are
+  pinned, and PyTorch rounds each pinned buffer up to a power of two, so a
+  588 MiB batch takes 1 GiB. A sweep can therefore run out of host RAM long
+  before the GPU fills, and the kernel's OOM killer may then take the desktop
+  session down with it. To prevent that:
   - Free memory is read every 50 ms and after every step. It's system RAM,
     or the room left under a cgroup memory cap (a container's limit, or
     `systemd-run -p MemoryMax=`) when that's tighter. `Host mem` is how far
@@ -309,6 +308,10 @@ With neither `-m` nor `-t`, the default preset of every task runs.
     killed at once.
   - Pinned buffers are released between trials, so each batch size doesn't
     keep its own cached set.
+  - With `--preprocess batch`, workers decode and preprocess 32 images at a
+    time and assemble the batch straight into the shared memory it's sent
+    through. Each worker holds about twice its batch, where passing the
+    whole batch to the processor at once held about seven times.
 - **The timing logic is itself tested.** `tests/test_methodology.py` builds
   pipelines with known throughput (sleeping loaders and models) and checks
   that the measured images/s and data-wait share match theory. In practice

@@ -9,7 +9,10 @@ import numpy as np
 import pytest
 import torch
 from PIL import Image
+from torch.utils.data import DataLoader
+from transformers import DetrImageProcessor
 
+from batch_bench import data as data_module
 from batch_bench.data import (
     BatchProcessorCollator,
     FolderImageSource,
@@ -31,6 +34,54 @@ class FakeProcessor:
         batch = images if isinstance(images, list) else [images]
         pixels = [torch.from_numpy(np.array(image.resize((8, 8)))).permute(2, 0, 1).float() for image in batch]
         return {"pixel_values": torch.stack(pixels), "sizes": [image.size for image in batch]}
+
+
+class PaddingProcessor:
+    """Keeps each image's size and pads a call to its largest image, like DETR's processor.
+
+    Records how many images each call saw, and how many the source had
+    decoded by then.
+    """
+
+    def __init__(self, source: CountingSource | None = None) -> None:
+        self.source = source
+        self.calls: list[int] = []
+        self.decoded_at_call: list[int] = []
+
+    def __call__(self, images: Image.Image | list[Image.Image], return_tensors: str) -> Mapping[str, Any]:
+        batch = images if isinstance(images, list) else [images]
+        self.calls.append(len(batch))
+        if self.source is not None:
+            self.decoded_at_call.append(self.source.loads)
+        height = max(image.height for image in batch)
+        width = max(image.width for image in batch)
+        pixels = torch.zeros(len(batch), 3, height, width)
+        mask = torch.zeros(len(batch), height, width, dtype=torch.int64)
+        for row, image in enumerate(batch):
+            # +1 so a black pixel differs from padding.
+            pixels[row, :, : image.height, : image.width] = torch.from_numpy(np.array(image)).permute(2, 0, 1) + 1.0
+            mask[row, : image.height, : image.width] = 1
+        return {"pixel_values": pixels, "pixel_mask": mask}
+
+
+class CountingSource:
+    """Random images of the given (width, height) sizes, counting decodes."""
+
+    def __init__(self, sizes: list[tuple[int, int]]) -> None:
+        self.sizes = sizes
+        self.loads = 0
+
+    def __len__(self) -> int:
+        return len(self.sizes)
+
+    def load(self, index: int) -> Image.Image:
+        self.loads += 1
+        width, height = self.sizes[index % len(self.sizes)]
+        pixels = np.random.default_rng(index).integers(0, 256, size=(height, width, 3), dtype=np.uint8)
+        return Image.fromarray(pixels)
+
+
+MIXED_SIZES = [(8, 4), (4, 6), (6, 6), (3, 3), (5, 2)]
 
 
 @pytest.mark.parametrize(("text", "expected"), [("640x480", (640, 480)), ("32X16", (32, 16)), (" 8 x 4 ", (8, 4))])
@@ -129,6 +180,18 @@ def test_image_dataset_cycles_and_bounds_checks(tiny_source: SyntheticImageSourc
         dataset[10]
 
 
+def test_image_dataset_batches_decode_when_read():
+    source = CountingSource(MIXED_SIZES)
+    images = ImageDataset(source, length=10).__getitems__([1, 7, 3])
+    assert source.loads == 0
+    assert len(images) == 3
+    assert images[1].size == MIXED_SIZES[7 % 5]
+    assert [image.size for image in images[1:]] == [MIXED_SIZES[2], MIXED_SIZES[3]]
+    assert source.loads == 3
+    with pytest.raises(IndexError):
+        ImageDataset(source, length=10).__getitems__([10])[0]
+
+
 def test_preprocessed_dataset_drops_the_batch_dimension(tiny_source: SyntheticImageSource):
     dataset = PreprocessedDataset(ImageDataset(tiny_source, 3), FakeProcessor())
     assert len(dataset) == 3
@@ -141,6 +204,97 @@ def test_batch_collator_keeps_only_tensors(tiny_source: SyntheticImageSource):
     batch = BatchProcessorCollator(FakeProcessor())([tiny_source.load(0), tiny_source.load(1)])
     assert set(batch) == {"pixel_values"}
     assert batch["pixel_values"].shape == (2, 3, 8, 8)
+
+
+class TestChunkedCollator:
+    @pytest.mark.parametrize(
+        ("chunk_size", "calls"),
+        [(1, [1, 1, 1, 1, 1]), (2, [2, 2, 1]), (4, [4, 1]), (5, [5]), (8, [5])],
+    )
+    def test_chunks_of_equal_shapes_match_one_call(self, chunk_size: int, calls: list[int]):
+        images = [CountingSource([(6, 4)]).load(index) for index in range(5)]
+        processor = PaddingProcessor()
+        batch = BatchProcessorCollator(processor, chunk_size=chunk_size)(images)
+        assert processor.calls == calls
+        whole = PaddingProcessor()(images, return_tensors="pt")
+        assert set(batch) == {"pixel_values", "pixel_mask"}
+        assert torch.equal(batch["pixel_values"], whole["pixel_values"])
+        assert torch.equal(batch["pixel_mask"], whole["pixel_mask"])
+
+    @pytest.mark.parametrize("chunk_size", [1, 2, 3])
+    def test_chunks_of_mixed_shapes_are_zero_padded_like_one_call(self, chunk_size: int):
+        source = CountingSource(MIXED_SIZES)
+        images = [source.load(index) for index in range(len(MIXED_SIZES))]
+        batch = BatchProcessorCollator(PaddingProcessor(), chunk_size=chunk_size)(images)
+        whole = PaddingProcessor()(images, return_tensors="pt")
+        assert batch["pixel_values"].shape == (5, 3, 6, 8)
+        assert torch.equal(batch["pixel_values"], whole["pixel_values"])
+        assert torch.equal(batch["pixel_mask"], whole["pixel_mask"])
+
+    def test_detr_processor_gives_the_same_batch_in_chunks(self):
+        processor = DetrImageProcessor(size={"shortest_edge": 16, "longest_edge": 40})
+        source = CountingSource([(40, 30), (30, 40), (64, 20), (25, 25), (33, 47)])
+        images = [source.load(index) for index in range(5)]
+        batch = BatchProcessorCollator(processor, chunk_size=2)(images)
+        whole = processor(images=images, return_tensors="pt")
+        assert set(batch) == {"pixel_values", "pixel_mask"}
+        assert torch.equal(batch["pixel_values"], whole["pixel_values"])
+        assert torch.equal(batch["pixel_mask"], whole["pixel_mask"])
+        # The chunks really did differ: the first pair alone pads to less than the whole batch.
+        first_pair = processor(images=images[:2], return_tensors="pt")["pixel_values"]
+        assert first_pair.shape[2:] != batch["pixel_values"].shape[2:]
+
+    def test_lazy_images_are_decoded_one_chunk_at_a_time(self):
+        source = CountingSource(MIXED_SIZES)
+        processor = PaddingProcessor(source)
+        BatchProcessorCollator(processor, chunk_size=2)(ImageDataset(source, 5).__getitems__(list(range(5))))
+        assert processor.decoded_at_call == [2, 4, 5]
+
+    def test_chunk_size_must_be_positive(self):
+        with pytest.raises(ValueError, match="chunk_size"):
+            BatchProcessorCollator(FakeProcessor(), chunk_size=0)
+
+    def test_empty_batch_is_an_error(self):
+        with pytest.raises(ValueError, match="empty"):
+            BatchProcessorCollator(FakeProcessor())([])
+
+
+def _collate_examples() -> list[dict[str, torch.Tensor]]:
+    images = [CountingSource(MIXED_SIZES).load(index) for index in range(5)]
+    return [
+        BatchProcessorCollator(FakeProcessor(), chunk_size=2)(images),
+        BatchProcessorCollator(PaddingProcessor(), chunk_size=2)(images),
+        pad_collate([{"x": torch.ones(2, 3)}, {"x": torch.full((2, 3), 2.0)}]),
+        pad_collate([{"x": torch.ones(2, 3)}, {"x": torch.ones(2, 2)}]),
+    ]
+
+
+def test_inside_workers_batches_are_built_as_they_are_pickled(monkeypatch: pytest.MonkeyPatch):
+    # A worker's result queue pickles batches in its feeder thread; building them there keeps the worker going.
+    expected = _collate_examples()
+    assert not any(tensor.is_shared() for batch in expected for tensor in batch.values())
+    monkeypatch.setattr(data_module, "get_worker_info", lambda: object())
+    for batch, want in zip(_collate_examples(), expected, strict=True):
+        assert not any(isinstance(value, torch.Tensor) for value in batch.values())
+        built = pickle.loads(pickle.dumps(batch))
+        assert set(built) == set(want)
+        assert all(torch.equal(built[key], want[key]) for key in want)
+    for batch in _collate_examples():
+        for value in batch.values():
+            assert isinstance(value, data_module._PaddedConcat)
+            assert value.run().is_shared()  # sent to the main process without another copy
+
+
+def test_workers_send_the_same_padded_batches():
+    def batches(num_workers: int) -> list[dict[str, torch.Tensor]]:
+        collate = BatchProcessorCollator(PaddingProcessor(), chunk_size=2)
+        dataset = ImageDataset(CountingSource(MIXED_SIZES), 10)
+        return list(DataLoader(dataset, batch_size=5, num_workers=num_workers, collate_fn=collate))
+
+    in_process, from_worker = batches(0), batches(1)
+    assert [batch["pixel_values"].shape for batch in from_worker] == [(5, 3, 6, 8)] * 2
+    for got, want in zip(from_worker, in_process, strict=True):
+        assert all(torch.equal(got[key], want[key]) for key in ("pixel_values", "pixel_mask"))
 
 
 class TestPadCollate:
