@@ -48,9 +48,16 @@ can't keep up. This tool catches that case and tells you.
    `1 - --memory-headroom` (90%) of the *usable* memory. Past the knee of the
    curve, bigger batches add latency and memory but no throughput. The
    headroom leaves room for fragmentation and larger real-world inputs.
-   - Usable memory is the device total, scaled by `--memory-fraction` if you
-     set one, and no more than was free when the run started. Memory another
-     process holds, such as a desktop session on the same GPU, doesn't count.
+   - Usable memory is the device total, scaled by `--memory-fraction`, and
+     no more than was free when the run started. Memory another process
+     holds, such as a desktop session on the same GPU, doesn't count.
+   - By default a run may use 75% of a CUDA, ROCm or XPU device. The sweep
+     drives the GPU to out-of-memory on purpose, and a GPU that also drives
+     the display needs some left: on the R9700, filling its 32 GB crashed
+     GNOME Shell and every app with it. The cap covers only PyTorch's
+     allocator, and the ROCm runtime used another 1–4.6 GiB beyond it, so
+     85% still came within 150 MB of filling the card. On a headless
+     machine, `--memory-fraction 1.0` uses the whole card.
 3. **Diagnose.** If the device waited on the DataLoader for 15% or more of the
    run, the report calls the run *input-bound*. A bigger batch won't help
    there. More workers or cheaper preprocessing will. Pass several worker
@@ -193,7 +200,7 @@ With neither `-m` nor `-t`, the default preset of every task runs.
 | `--device-index` | `0` | Which GPU, on multi-GPU machines. |
 | `--precision` | `auto` | Autocast dtype. `auto` is bf16 where the GPU supports it natively (emulation doesn't count), otherwise fp16, and fp32 on CPU. |
 | `--mode` | `inference` | `training` adds backward and an AdamW step. |
-| `--memory-fraction` | none; `1.0` on MPS | Cap the process at this fraction of device memory. |
+| `--memory-fraction` | `0.75`; `1.0` on MPS | Cap the process at this fraction of device memory, leaving room for a desktop on the same GPU. `1.0` uses all of it. |
 | `--compile` | off | Wrap the model in `torch.compile`, recompiling for each batch size. |
 | `--no-cudnn-benchmark` | | Skip cuDNN/MIOpen autotuning. Shortens the first trials on ROCm. Autotuning is also off automatically for `--image-dir` without `--image-size`. |
 

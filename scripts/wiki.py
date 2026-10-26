@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from batch_bench.cli import DEFAULT_MEMORY_FRACTION
 from batch_bench.models import DEFAULT_PRESETS, PRESETS, Task
 from batch_bench.sweep import doubling_batch_sizes
 
@@ -354,10 +355,12 @@ def reproduce(run: Run) -> str:
     }
     # Runs recorded before a setting existed used its default.
     parts += [f"{flag} {s[key]}" for key, (flag, default) in defaults.items() if s.get(key, default) != default]
-    # MPS runs are capped at 1.0 unless told otherwise, so that isn't a choice.
-    fraction = s.get("memory_fraction")
-    if fraction is not None and not (device["backend"] == "mps" and fraction == 1.0):
-        parts.append(f"--memory-fraction {fraction}")
+    # Unset caps MPS at 1.0 and other GPUs at DEFAULT_MEMORY_FRACTION. Runs from
+    # before that default recorded an uncapped GPU as None, which is 1.0 today.
+    if device["backend"] != "cpu":
+        fraction = s.get("memory_fraction") or 1.0
+        if fraction != (1.0 if device["backend"] == "mps" else DEFAULT_MEMORY_FRACTION):
+            parts.append(f"--memory-fraction {fraction}")
     if s["compile_model"]:
         parts.append("--compile")
     if not s["pin_memory"]:

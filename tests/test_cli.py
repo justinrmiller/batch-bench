@@ -119,8 +119,12 @@ class TestDefaultMemoryFraction:
         assert cli.default_memory_fraction(Backend.MPS, 0.5, {}) == 0.5
         assert cli.default_memory_fraction(Backend.MPS, None, {"PYTORCH_MPS_HIGH_WATERMARK_RATIO": "1.4"}) is None
 
-    def test_other_backends_are_not_capped(self):
-        assert cli.default_memory_fraction(Backend.ROCM, None, {}) is None
+    @pytest.mark.parametrize("backend", [Backend.CUDA, Backend.ROCM, Backend.XPU])
+    def test_other_gpus_leave_room_for_a_desktop(self, backend: Backend):
+        assert cli.default_memory_fraction(backend, None, {}) == cli.DEFAULT_MEMORY_FRACTION == 0.75
+        assert cli.default_memory_fraction(backend, 1.0, {}) == 1.0
+
+    def test_the_cpu_is_not_capped(self):
         assert cli.default_memory_fraction(Backend.CPU, None, {}) is None
 
 

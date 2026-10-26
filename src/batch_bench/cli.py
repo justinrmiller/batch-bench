@@ -51,6 +51,8 @@ from batch_bench.runner import Mode, Precision, TrialResult, TrialRunner, TrialS
 from batch_bench.sweep import doubling_batch_sizes, parse_int_list, sweep_batch_sizes
 
 ALL_TASKS = "all"
+# Share of device memory a GPU run may use when --memory-fraction is unset (MPS uses 1.0).
+DEFAULT_MEMORY_FRACTION = 0.75
 
 RUN_EXAMPLES = """\
 examples:
@@ -80,16 +82,27 @@ def default_num_workers() -> int:
 def default_memory_fraction(backend: Backend, requested: float | None, environ: Mapping[str, str]) -> float | None:
     """The per-process memory cap to apply, if any.
 
+    Other GPUs are capped at :data:`DEFAULT_MEMORY_FRACTION`. A sweep pushes
+    the device to out-of-memory on purpose, and when the same GPU drives the
+    display, the desktop needs some left: on an R9700 a sweep that filled its
+    32 GB crashed GNOME Shell, and every app with it. The cap only covers
+    PyTorch's allocator. The ROCm runtime used another 1-4.6 GiB outside it,
+    more with DataLoader workers and pinned memory, so at 0.85 detectors came
+    within 150 MB of filling the card again.
+
     MPS lets a process allocate 1.7x Metal's recommended working set by
     default, which is past physical RAM on most Macs. An oversized batch then
     swaps the whole system instead of raising OOM, so MPS is capped at 1.0
     unless the user chose a fraction or set PYTORCH_MPS_HIGH_WATERMARK_RATIO.
+    The recommended working set already leaves the system its share.
     """
     if requested is not None:
         return requested
-    if backend is Backend.MPS and "PYTORCH_MPS_HIGH_WATERMARK_RATIO" not in environ:
-        return 1.0
-    return None
+    if backend is Backend.CPU:
+        return None
+    if backend is Backend.MPS:
+        return None if "PYTORCH_MPS_HIGH_WATERMARK_RATIO" in environ else 1.0
+    return DEFAULT_MEMORY_FRACTION
 
 
 def memory_budget(total: int | None, fraction: float | None, free: int | None) -> int | None:
@@ -226,7 +239,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--memory-fraction",
         type=_memory_fraction,
         default=None,
-        help="cap the process at this fraction of device memory (unset: no cap, except 1.0 on MPS)",
+        help=f"cap the process at this fraction of device memory; unset: {DEFAULT_MEMORY_FRACTION} "
+        "(1.0 on MPS), leaving room for a desktop on the same GPU; 1.0 uses all of it",
     )
     device.add_argument("--compile", action="store_true", help="wrap the model in torch.compile")
     device.add_argument(
