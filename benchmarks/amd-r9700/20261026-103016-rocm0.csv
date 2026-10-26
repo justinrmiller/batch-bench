@@ -1,0 +1,28 @@
+model,model_id,task,batch_size,num_workers,status,samples_per_second,compute_samples_per_second,latency_p50_ms,latency_p95_ms,data_wait_fraction,peak_allocated_mib,peak_reserved_mib,peak_host_mib,recommended,error
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,1,1,ok,40.3780496854266,41.0052250500333,24.38713599985931,24.57955050522287,0.005319512716172513,1250.8,1440.0,458.5,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,2,1,ok,45.22451749881896,45.72716039128741,43.73768200093764,44.201100996360765,0.0036311641366817806,1516.3,1888.0,207.5,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,4,1,ok,47.16884110556064,47.44729715773638,84.30406450133887,84.64828599971952,0.0021111608834582154,2043.8,3370.0,255.9,True,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,8,1,ok,48.26322507155536,48.378814145802465,165.36163899945677,165.8389474996511,0.0010994294768475645,3101.8,5184.0,350.5,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,16,1,ok,48.167523739456385,48.19022636429877,332.0175315020606,333.7283654946077,0.0005747561583116042,5433.8,9904.0,501.9,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,32,1,ok,47.512461282295405,47.51753069267239,673.4356675005984,676.106546752635,0.0002794656982749821,10475.9,19584.0,821.4,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,64,1,oom,,,,,,,,,False,"skipped: needs about 37.9 GiB of device memory (scaled from batch 32), more than the 23.9 GiB budget"
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,48,1,oom,,,,,,,,,False,"skipped: needs about 28.5 GiB of device memory (scaled from batch 32), more than the 23.9 GiB budget"
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,40,1,ok,47.80207804489869,47.829882681396846,836.2972635004553,838.2467072533473,0.0002190996304006863,12996.9,24376.0,834.5,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,1,2,ok,40.29446956558401,40.87460287245066,24.465069498546654,24.62249400014116,0.004933256944712802,1250.8,1406.0,222.1,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,2,2,ok,44.97034325284236,45.34607095469194,44.10525449929992,44.31723150264588,0.0031040147067946835,1515.3,2000.0,260.3,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,4,2,ok,47.30249841972436,47.50735358791357,84.19749150198186,84.4481767508114,0.0018334795863533533,2043.8,3854.0,342.0,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,8,2,ok,48.3812633021279,48.51415353289447,164.9003314996662,165.43200350133702,0.0010267951731328037,3101.8,6700.0,436.8,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,16,2,ok,48.54823153881193,48.59169366796069,329.2743839992909,329.58994550062926,0.000518038264361989,5433.8,12408.0,658.3,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,32,2,ok,47.91977137103737,47.937338743597465,667.5380995002342,669.0080317512184,0.00026856102538102335,10475.9,23248.0,1134.8,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,64,2,oom,,,,,,,,,False,"skipped: needs about 37.9 GiB of device memory (scaled from batch 40), more than the 23.9 GiB budget"
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,48,2,oom,,,,,,,,,False,"skipped: needs about 28.5 GiB of device memory (scaled from batch 40), more than the 23.9 GiB budget"
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,40,2,ok,47.7607829092911,47.79991552850525,836.8215625014273,839.0375907511043,0.00021285883802875022,12996.9,24316.0,1110.5,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,1,4,ok,40.443317503571535,40.9079854602638,24.445105002087075,24.52718425047351,0.0040742016925313885,1250.8,1406.0,293.4,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,2,4,ok,44.953735364714916,45.34539753389672,44.10590950283222,44.4363712467748,0.002676749101052481,1515.3,2000.0,368.6,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,4,4,ok,47.29502067015482,47.511427163991705,84.19027250420186,84.54955349770898,0.001707951035531783,2043.8,3854.0,519.4,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,8,4,ok,48.46848339510182,48.58720051596652,164.6524169955228,165.11341825025738,0.0009634796140353114,3101.8,6700.0,609.9,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,16,4,ok,48.57273760612516,48.64296834977537,328.92729499872075,329.7305662490544,0.0005006134002764905,5433.8,12408.0,990.1,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,32,4,ok,47.83135325961453,47.92811589019368,667.6665544982825,672.7961892465828,0.0002534422733268957,10475.9,23248.0,1864.6,False,
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,64,4,oom,,,,,,,,,False,"skipped: needs about 37.9 GiB of device memory (scaled from batch 40), more than the 23.9 GiB budget"
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,48,4,oom,,,,,,,,,False,"skipped: needs about 28.5 GiB of device memory (scaled from batch 40), more than the 23.9 GiB budget"
+upernet-convnext-small,openmmlab/upernet-convnext-small,image-segmentation,40,4,ok,47.712732570580386,47.73971970639981,837.8767249996599,841.38242275003,0.0002036184838832152,12996.9,24316.0,1879.3,False,

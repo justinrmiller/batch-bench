@@ -1,0 +1,34 @@
+model,model_id,task,batch_size,num_workers,status,samples_per_second,compute_samples_per_second,latency_p50_ms,latency_p95_ms,data_wait_fraction,peak_allocated_mib,peak_reserved_mib,peak_host_mib,recommended,error
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,1,1,ok,116.50998052642474,120.41129131717103,8.304868995764991,8.646921005492914,0.013397810296901591,266.7,274.0,437.7,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,2,1,ok,158.16344091788622,164.7325825856599,12.140889000875177,12.843334750868962,0.013294620766108444,505.3,514.0,202.6,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,4,1,ok,214.44706200779166,220.6706744514272,18.126558999938425,18.639465250089415,0.009320489250838011,918.3,930.0,249.9,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,8,1,ok,133.172331869091,164.8099554727287,48.540757001319434,50.05780824831163,0.190283782666588,1746.8,1782.0,346.2,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,16,1,ok,135.5529667085224,162.1382558042666,98.68121450199396,101.07154574870947,0.15906555859489563,3400.8,3558.0,488.1,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,32,1,ok,126.2886360150946,150.0304861923362,213.2899840034952,214.41835350196925,0.1575910555619907,6710.8,6786.0,799.5,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,64,1,ok,131.7887976256306,220.68857113586944,290.00142449876876,291.28262599988375,0.4020796300593332,13330.8,13502.0,1437.5,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,128,1,oom,,,,,,,,,False,"skipped: needs about 26.3 GiB of device memory (scaled from batch 64), more than the 23.9 GiB budget"
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,96,1,ok,138.95230256244338,223.74631843651036,429.0573390026111,432.6758932493249,0.37813963731709554,19950.8,20740.0,2459.0,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,112,1,ok,136.89816399906425,224.82178432447498,498.17236499802675,500.83587174776767,0.390353649804518,23260.8,24178.0,2592.2,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,120,1,oom,,,,,,,,,False,"skipped: needs about 25.3 GiB of device memory (scaled from batch 112), more than the 23.9 GiB budget"
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,1,2,ok,119.26141732547315,121.84200004595085,8.207350500015309,8.448034750472289,0.012402799707234615,266.7,278.0,220.5,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,2,2,ok,159.6358530628837,164.2978612101862,12.173012997664046,13.018762752835755,0.017817695837351728,504.7,538.0,253.5,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,4,2,ok,205.1161256272546,213.09508737467075,18.77096299722325,19.85738800249237,0.009232757560704843,918.3,1002.0,335.7,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,8,2,ok,223.48633894395135,226.76853449529145,35.27826299978187,35.59883525122132,0.005575945743016241,1745.8,1888.0,486.2,True,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,16,2,ok,233.75906419827936,235.7226145709982,67.87638949754182,68.51583024763386,0.0030030725465484192,3400.8,3694.0,677.0,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,32,2,ok,228.41093603524556,232.25617780569098,137.77889700213564,147.0554087536584,0.0015914982466868329,6710.8,7266.0,1069.3,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,64,2,ok,229.74846457138733,230.39730831433585,277.78102299998864,279.9130290004541,0.0012456452472437676,13330.8,14416.0,1872.2,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,128,2,oom,,,,,,,,,False,"skipped: needs about 27.0 GiB of device memory (scaled from batch 112), more than the 23.9 GiB budget"
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,96,2,ok,226.118517039363,228.41583333638067,420.28610100169317,436.941255498823,0.0006935676160912849,19950.8,21568.0,3091.6,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,112,2,ok,227.65083932745276,227.78574000399104,491.6901294964191,494.88181225024164,0.0004833728565601586,23260.8,23464.0,3166.5,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,120,2,oom,,,,,,,,,False,"skipped: needs about 25.3 GiB of device memory (scaled from batch 112), more than the 23.9 GiB budget"
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,1,4,ok,122.38005059185983,128.51923410743166,7.780936502967961,9.236162004526705,0.010760625363153985,266.7,278.0,292.5,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,2,4,ok,166.3181383440882,171.0351246072968,11.693504504364682,13.016034998145187,0.015473454773615673,504.7,538.0,362.8,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,4,4,ok,207.42767116960425,211.0017082285437,18.957192496600328,19.77498324959015,0.007279839437180542,918.3,1002.0,507.5,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,8,4,ok,224.53653077002204,227.33467274149587,35.19040850005695,35.94700350186031,0.004715914405790324,1745.8,1888.0,649.4,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,16,4,ok,233.89301443625064,235.42647925985324,67.96176900024875,68.4585277485894,0.0027687441724415754,3400.8,3694.0,990.3,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,32,4,ok,232.4019659630155,233.33727745935704,137.14053900184808,138.39778724650387,0.0014804155025569337,6710.8,7266.0,1768.2,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,64,4,ok,229.97085522756237,230.3203521821624,277.8738369997882,280.0512482463091,0.0007631800695689705,13330.8,14416.0,2997.7,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,128,4,oom,,,,,,,,,False,"skipped: needs about 27.0 GiB of device memory (scaled from batch 112), more than the 23.9 GiB budget"
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,96,4,ok,228.12608425849174,228.6836428191104,419.79390749838785,424.4415380035207,0.0005289553276467264,19950.8,21568.0,5127.7,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,112,4,ok,228.04360152724405,227.9337374243041,491.37087499912013,494.70328250208695,0.00041565502153758456,23260.8,23464.0,5344.3,False,
+segformer-b0,nvidia/segformer-b0-finetuned-ade-512-512,image-segmentation,120,4,oom,,,,,,,,,False,"skipped: needs about 25.3 GiB of device memory (scaled from batch 112), more than the 23.9 GiB budget"

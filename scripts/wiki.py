@@ -86,6 +86,9 @@ HARDWARE = {
             notes=(
                 "MIOpen searches for kernels the first time it sees each batch shape. Warmup absorbs it, so the "
                 "numbers are unaffected, but first runs take longer.",
+                "The card also drives the desktop, so runs use 75% of it (`--memory-fraction`'s default), a "
+                "23.9 GiB budget. Sweeps that filled it crashed GNOME Shell, and the ROCm runtime uses another "
+                "1–4.6 GiB beyond PyTorch's cap.",
                 "PyTorch's ROCm build drives the GPU through the `torch.cuda` API, so out-of-memory errors in the "
                 "results tables read *CUDA out of memory*.",
                 "The DataLoader workers share a 6-core CPU with the process that feeds the GPU, so input-bound "
@@ -158,46 +161,182 @@ OBSERVATIONS: dict[tuple[str, str, str], list[str]] = {
         "**Measured after the prefetch-drain timing fix** (4c7bfd7), unlike the CLIP runs on this machine.",
     ],
     ("clip-vit-b32", "amd-r9700", "inference"): [
-        "**Input-bound at every worker count.** The pick, batch 1024 with 4 workers, waited on the DataLoader "
-        "45% of the time; with 1 worker the wait is ≥79% from batch 16 up. The GPU alone ran 3,546 img/s at "
-        "batch 1024 (Dev img/s, 1 worker), 2.3× what the pipeline delivered.",
-        "**Workers matter more than batch size.** At batch 1024, 1 worker gets 471.7 img/s, 2 get 815.6 and "
-        "4 get 1,509.7: each worker supplies roughly 380–470 img/s. This sweep stopped at 4 of the 11 default "
-        "workers; rerun with `--num-workers 4,8,11` before relying on the batch size.",
-        "**The pick is the largest batch tested, so it may not be the knee.** With 4 workers, throughput was "
-        "still rising at 1024 (+7.7% over 512), and nothing ran out of memory (3.1 GiB, 10% of the budget).",
-        "**Batch 16 with 4 workers is the low-latency alternative:** 1,234.3 img/s (82% of the pick) at a "
-        "9.2 ms step p50, against 375.2 ms at 1024.",
-        "**More workers slow the device step at the largest batches.** At batch 1024, step p50 is 288.7 ms "
-        "with 1 worker and 375.2 ms with 4 (Dev img/s 3,546 vs. 2,729), and p95 is 28% above p50 at the pick. "
-        "The step includes the host-to-device copy, so the workers competing for the 6-core CPU are the "
-        "likely cause.",
-        "**The curves are uneven.** Batch 16 is slower than batch 8 with 1 and 2 workers (311.0 vs. 518.2 and "
-        "598.2 vs. 865.2 img/s), and batch 32 dips with 4 (986.2, against 1,234.3 at 16 and 1,220.1 at 64). "
-        "This is the only run, so a rerun would show whether the dips are real.",
-        "**Against the M4 Pro:** 2.9× its best end-to-end result (518.1 img/s), and the GPU alone is 6.8× "
-        "faster (3,546 vs. 519.3 Dev img/s). With one worker the two are level (518.2 img/s here at batch 8), "
-        "but the M4 Pro is GPU-bound there and this machine input-bound. Precision differs: bf16 here, fp16 "
-        "on the M4 Pro.",
-        "**Measured after the prefetch-drain timing fix** (4c7bfd7), which matters here: it corrected inflated "
-        "throughput for input-bound loaders.",
+        "**Input-bound at every worker count.** With 4 workers the device waited on the DataLoader 38–65% "
+        "of the time from batch 16 up; with 1 worker, 79–87%. From batch 128 up, 1 worker gets 436–495 "
+        "img/s, 2 get 766–864 and 4 get 1,222–1,347, so each added worker supplies less, about 300–500 img/s.",
+        "**The pick is batch 128 with 4 workers:** 1,347.0 img/s at a 36.4 ms step p50 and 0.7 GiB. Larger "
+        "batches add latency but no throughput (1,329.6 img/s at 1024, 293.8 ms). The sweep stopped at 4 of "
+        "the 11 default workers, and workers are the lever here, not batch size.",
+        "**The device is fastest when kept busy.** Its own rate (Dev img/s) at batch 128 is 2,691.7 with 1 "
+        "worker, 3,212.4 with 2 and 3,511.9 with 4. With one worker the GPU idles between steps, likely "
+        "clocking down. Alone it peaks around 3,500 img/s, 2.6× what the pipeline delivers.",
+        "**Batch 16 is slower than batch 8 at every worker count:** 298.4 vs. 504.1 img/s with 1 worker, "
+        "588.8 vs. 942.5 with 2 and 958.5 vs. 1,076.1 with 4. The 2026-10-18 run showed the same dip with 1 "
+        "and 2 workers, so it's repeatable. It comes from the input pipeline: data wait jumps (1.5% → 38.4% with "
+        "4 workers) while Dev img/s rises.",
+        "**Memory is no constraint:** 3.1 GiB (13% of the 23.9 GiB budget) at batch 1024. Host RAM costs "
+        "more there: 9.8 GiB with 4 workers.",
+        "**Against the M4 Pro:** 2.6× its best end-to-end result (518.1 img/s), and the device alone is 6.8× "
+        "faster (3,511.9 vs. 519.3 Dev img/s). With one worker the two are about level (504.1 img/s here at "
+        "batch 8). Precision differs: bf16 here, fp16 on the M4 Pro.",
+    ],
+    ("dinov2-small", "amd-r9700", "inference"): [
+        "**Input-bound, like CLIP ViT-B/32.** The pick, batch 128 with 4 workers, gets 1,274.2 img/s and "
+        "waited on the DataLoader 26.6% of the time. With 1 worker the wait is 58–81% from batch 8 up, at "
+        "362–491 img/s.",
+        "**Batch 128 is a clear peak with 4 workers:** 5.3% above batch 64 (1,209.5 img/s) and 7–8% above "
+        "256–1024 (1,184.0–1,189.2), at a 71.1 ms step p50 and 0.9 GiB.",
+        "**The device saturates early.** Dev img/s stays between 1,759 and 2,498 from batch 32 up. "
+        "DINOv2-small has a quarter of CLIP ViT-B/32's parameters (22.1M vs. 87.8M) but about half its device "
+        "rate, because patch size 14 gives 257 tokens per image against CLIP's 50.",
+        "**Batch 16 dips with 2 and 4 workers** (604.4 vs. 856.4 and 883.9 vs. 1,020.2 img/s at batch 8), "
+        "as it does for CLIP ViT-B/32.",
+        "**Memory isn't the limit:** 5.4 GiB (23% of the budget) at batch 1024.",
+    ],
+    ("dinov2-base", "amd-r9700", "inference"): [
+        "**GPU-bound with 4 workers.** Data wait is ≤1.4% at every batch size, and throughput is flat from "
+        "batch 32 (1,106.8 img/s) to 1024 (1,120.2), apart from a dip at 64 (1,040.0). So the pick is 32, at "
+        "a 27.6 ms step p50 and 0.8 GiB.",
+        "**Fewer workers can't keep up.** 1 worker gets 417–486 img/s from batch 8 up, waiting 27–52% of the "
+        "time; 2 workers get 595–891 img/s from batch 16 up, waiting 12–18%.",
+        "**Same size as CLIP ViT-B/32, a third of its device rate:** about 0.9 ms per image (1,088–1,158 Dev "
+        "img/s with 4 workers from batch 32) against 0.28 ms, since patch size 14 gives 257 tokens per image "
+        "against CLIP's 50.",
+        "**Memory:** 10.3 GiB (43% of the budget) at batch 1024, and nothing ran out.",
+    ],
+    ("siglip2-base", "amd-r9700", "inference"): [
+        "**GPU-bound with 4 workers from batch 16 up** (data wait ≤1.6%, except 9.1% at batch 512). The "
+        "pick, batch 128, gets 1,332.4 img/s at a 94.6 ms step p50, 2.4% below the fastest result, batch 1024 "
+        "at 1,365.4.",
+        "**About 0.73 ms of device time per image**, between CLIP ViT-B/32 (0.28 ms, 50 tokens) and "
+        "DINOv2-base (0.9 ms, 257 tokens): patch size 16 at 224 px gives 196 tokens.",
+        "**One or two workers leave it input-bound:** 1 worker gets 304–531 img/s from batch 8 up (22–66% "
+        "wait), 2 workers 612–939 img/s.",
+        "**Batch 32 dips with 1 and 2 workers** (304.4 and 612.0 img/s, against 457.4 and 795.2 at batch 16), "
+        "an input-pipeline dip like the ones CLIP ViT-B/32 and DINOv2-small show at 16.",
+        "**Memory:** 7.7 GiB (32% of the budget) at batch 1024.",
+    ],
+    ("clip-vit-l14", "amd-r9700", "inference"): [
+        "**GPU-bound at every worker count.** Data wait is under 1% everywhere but one trial (8.7% at batch "
+        "32 with 1 worker), and from batch 16 up throughput sits at 351–360 img/s whether 1, 2 or 4 workers "
+        "feed it.",
+        "**Batch 16 is the pick and the fastest:** 359.5 img/s at a 44.0 ms step p50, 4.9× batch 1. Past 16 "
+        "it only adds latency: 2.9 s per step at 1024, for 2.4% less throughput.",
+        "**About 2.8 ms of device time per image**, 10× CLIP ViT-B/32: 3.5× the parameters (304.0M vs. "
+        "87.8M) and 257 tokens per image instead of 50.",
+        "**One worker is enough.** Extra workers only add host RAM: 4.4 GiB with 1 worker at batch 1024, "
+        "12.2 GiB with 4.",
+        "**The heaviest embedding preset on memory:** 16.1 GiB (68% of the budget) at batch 1024, still "
+        "without running out.",
     ],
     ("segformer-b0", "amd-r9700", "inference"): [
-        "**Flat from batch 8 up.** With 2 workers, every batch from 8 to 144 gets 230.1–237.0 img/s, within "
-        "3% of the peak at 16. Device time per image settles at 4.2–4.3 ms, so bigger batches add only latency "
-        "and memory: step p50 is 34.3 ms at the pick and 552.4 ms at 128.",
-        "**GPU-bound with 2 or more workers.** Data wait is ≤1.1% at every size, and 4 workers are within "
-        "0.5% of 2 from batch 8 up.",
-        "**One worker can't keep up past batch 4.** It peaks at 219.5 img/s at batch 4, then falls to "
-        "130.8–146.7 img/s, 37–44% below 2 workers, with the GPU waiting 25–39% of the time.",
-        "**Memory sets the upper limit, not throughput.** With 2 workers, each image adds about 223 MiB: "
-        "1.8 GiB (6%) at the pick, 28.0 GiB (88%) at 128 and 29.4 GiB (93%) at 144, the largest batch that "
-        "fit. Batch 160 ran out of memory.",
-        "**Against the M4 Pro:** 2.5× its pick (232.2 vs. 94.4 img/s), and throughput holds as batches grow "
-        "where the M4 Pro's fell 65% by batch 128. Peak memory at 128 is 28.0 GiB here vs. 17.7 GiB there, "
-        "but ROCm reads PyTorch's peak counters while MPS is sampled after each step, so treat that gap as "
-        "approximate. Precision differs: bf16 here, fp16 on the M4 Pro.",
-        "**Steps are steady.** From batch 4 up, p95 is within 3.7% of p50 at every worker count.",
+        "**Flat from batch 8 up with 2 or more workers:** 223.5–233.9 img/s, peaking at batch 16. The pick is "
+        "batch 8 with 2 workers, 223.5 img/s at a 35.3 ms step p50, within 5% of the peak at half its memory "
+        "(1.8 vs. 3.6 GiB).",
+        "**GPU-bound with 2 or more workers:** data wait is ≤1.8% at every size.",
+        "**One worker can't keep up past batch 4.** It peaks at 214.4 img/s at batch 4, then falls to "
+        "126–139 img/s with the device waiting 16–40% of the time. Its device steps run slower too (150–165 "
+        "Dev img/s at batch 8–32, against about 230 with 2 workers), consistent with the GPU clocking down "
+        "between steps.",
+        "**Memory sets the ceiling.** Each image adds about 225 MiB (14.1 GiB at batch 64), and batch 112, "
+        "the largest that fit, used 22.9–23.6 GiB (96–99% of the 23.9 GiB budget). Batch 120 was projected "
+        "to need 25.3 GiB and skipped.",
+        "**Against the M4 Pro:** 2.4× its pick (223.5 vs. 94.4 img/s), and throughput holds as batches grow, "
+        "where the M4 Pro's fell 65% by batch 128. Precision differs: bf16 here, fp16 on the M4 Pro.",
+    ],
+    ("segformer-b5", "amd-r9700", "inference"): [
+        "**GPU-bound and flat:** 21.0–24.4 img/s at every batch size and worker count, with data wait ≤0.3%. "
+        "Device time per image is 41–48 ms, about 10× SegFormer-B0's, from 22× the parameters (84.7M vs. "
+        "3.8M) at 640 px instead of 512.",
+        "**The pick is batch 4 with 1 worker:** 23.5 img/s at a 169.8 ms step p50 and 4.2 GiB. Batch 16 is "
+        "the fastest at 24.4 img/s, 3.8% more for nearly 4× the latency and memory.",
+        "**Workers don't matter:** one keeps the GPU fed, and 2 or 4 are within 3% of it.",
+        "**Memory sets the ceiling at batch 24:** about 1 GiB per image, 22.9–23.7 GiB at 24 (96–99% of the "
+        "budget). Batch 32 was projected to need 30.6–31.4 GiB and skipped.",
+    ],
+    ("upernet-convnext-small", "amd-r9700", "inference"): [
+        "**GPU-bound and flat:** 40.3–48.6 img/s at every batch size and worker count, with data wait ≤0.5%. "
+        "From batch 4 up, device time per image holds at 20.6–21.1 ms.",
+        "**The pick is batch 4 with 1 worker:** 47.2 img/s at an 84.3 ms step p50 and 3.3 GiB, 2.9% below the "
+        "fastest result (batch 16 with 4 workers, 48.6 img/s at 328.9 ms).",
+        "**Workers don't matter:** 1, 2 and 4 are within 1% of each other at every batch size.",
+        "**Memory sets the ceiling at batch 40:** 23.7–23.8 GiB, 99–100% of the budget. Batch 48 was "
+        "projected to need 28.5 GiB and skipped.",
+        "**Half SegFormer-B5's device time per image** (21 vs. 41 ms) at a similar size (81.9M vs. 84.7M "
+        "parameters), on 512 px inputs instead of 640.",
+    ],
+    ("mask2former-swin-tiny", "amd-r9700", "inference"): [
+        "**GPU-bound and flat from batch 8 up:** 88.2–91.5 img/s at every worker count, with data wait "
+        "≤0.2%. Device time per image falls from 35 ms at batch 1 to about 11 ms at 8 and stays there.",
+        "**The pick is batch 8 with 1 worker:** 89.0 img/s at an 89.5 ms step p50 and 1.7 GiB, 2.7% below "
+        "the fastest result (batch 16 with 4 workers, 91.5 img/s). Batch 1 gets 28.1 img/s, so batching to 8 "
+        "gains 3.2×.",
+        "**Workers don't matter:** 1, 2 and 4 are within 2% of each other from batch 2 up.",
+        "**Memory sets the ceiling at batch 120:** 23.3–23.6 GiB (97–99% of the budget). Batch 128 ran out of "
+        "memory with 1 worker, where the projection from batch 64 put it just under the budget, and was "
+        "skipped with 2 and 4 (projected 24.8–25.2 GiB).",
+    ],
+    ("detr-resnet-50", "amd-r9700", "inference"): [
+        "**One worker can't keep up.** It peaks at batch 2 (44.4 img/s), then gets 33–36 img/s from batch 4 "
+        "up while the device waits 27–47% of the time. DETR's preprocessing upsizes each 640×480 image to "
+        "800×1066, so every batch is expensive to build.",
+        "**With 4 workers it's GPU-bound** (data wait ≤0.5%) at 55.3–63.7 img/s. The pick is batch 8: 60.7 "
+        "img/s at a 130.2 ms step p50 and 2.3 GiB, 4.7% below the fastest result, batch 80 at 63.7 img/s.",
+        "**About 16 ms of device time per image** from batch 8 up (61–64 Dev img/s).",
+        "**Memory sets the ceiling at batch 80:** 20.5–22.4 GiB (86–94% of the budget). Batch 88 was projected "
+        "to need 24.6 GiB and skipped.",
+        "**Host RAM is the bigger cost at large batches:** 24.1 GiB at batch 80 with 4 workers. Each image "
+        "becomes about 17 MB on the way to the GPU, an 800×1066 float image plus an int64 padding mask.",
+    ],
+    ("rtdetr-v2-r18", "amd-r9700", "inference"): [
+        "**GPU-bound with 2 or 4 workers from batch 8 up:** 176.8–194.8 img/s with data wait ≤0.4%. Device "
+        "time settles at about 5.1 ms per image.",
+        "**The pick is batch 16 with 4 workers:** 191.9 img/s at an 81.2 ms step p50 and 2.0 GiB, 1.5% below "
+        "the fastest result (batch 128 with 2 workers, 194.8 img/s at 654.9 ms).",
+        "**One worker can't keep up past batch 2:** 93–125 img/s from batch 4 up, waiting 16–35% of the time.",
+        "**3× DETR's throughput** at half its parameters (20.2M vs. 41.5M), on fixed 640×640 inputs.",
+        "**The ceiling is conservative.** The 1-worker pass, which ran each batch size first, used more memory "
+        "than the later ones (19.7 vs. 14.5 GiB at batch 128), and its 22.1 GiB at batch 144 projected batch "
+        "160 to 24.6 GiB, so 160 was skipped for every worker count. With 2 or 4 workers it would likely fit "
+        "(16.3 GiB at 144).",
+    ],
+    ("rtdetr-r50", "amd-r9700", "inference"): [
+        "**GPU-bound at every worker count:** data wait is ≤0.5%, and from batch 8 up throughput is flat at "
+        "89.9–93.6 img/s, about 10.7 ms of device time per image.",
+        "**The pick is batch 8 with 1 worker:** 92.0 img/s at an 86.5 ms step p50 and 1.7 GiB, 1.7% below the "
+        "fastest result (batch 32 with 4 workers, 93.6 img/s).",
+        "**Workers don't matter:** one keeps the GPU fed, and from batch 16 up 1, 2 and 4 workers are within "
+        "0.5% of each other.",
+        "**Half RT-DETRv2-R18's throughput** (93.6 vs. 194.8 img/s) with twice the parameters (42.9M vs. "
+        "20.2M), on the same 640×640 inputs.",
+        "**The ceiling is conservative, as for RT-DETRv2-R18.** The 1-worker pass used 23.1 GiB at batch 128 "
+        "against 17.7 GiB with 2 and 4 workers, and projected batch 144 to 26.0 GiB, so 144 was skipped for "
+        "every worker count.",
+    ],
+    ("dfine-small", "amd-r9700", "inference"): [
+        "**The fastest detector on this machine:** 214.7 img/s at batch 32 with 4 workers (146.9 ms step p50, "
+        "2.8 GiB), both the pick and the fastest result. That's 10% above RT-DETRv2-R18 with half its "
+        "parameters (10.3M vs. 20.2M).",
+        "**GPU-bound with 4 workers** (data wait ≤0.5%) at 185.4–214.7 img/s from batch 8 up, about 4.6–4.9 "
+        "ms of device time per image from batch 16.",
+        "**One worker can't keep up past batch 4:** 90–120 img/s from batch 8 up, waiting 24–44% of the time.",
+        "**Nothing to gain past batch 32:** 198–209 img/s from 64 to 288 with 2 and 4 workers, at 2–9× the step time.",
+        "**Memory sets the ceiling at batch 288:** 21.8–23.8 GiB (91–99% of the budget). Batch 320 was "
+        "projected to need 24.2–26.4 GiB and skipped.",
+    ],
+    ("yolos-small", "amd-r9700", "inference"): [
+        "**Input-bound past batch 2 at every worker count.** From batch 4 up the device waited 18–31% of the "
+        "time with 4 workers, 18–45% with 2 and 50–66% with 1. YOLOS preprocesses like DETR, upsizing each "
+        "640×480 image to 800×1066.",
+        "**The pick is batch 2 with 4 workers:** 84.2 img/s at a 23.2 ms step p50 and 0.4 GiB, also the "
+        "fastest result. Larger batches make the device faster (120.9 Dev img/s at 128 vs. 86.0 at 2), but "
+        "4 workers deliver only 73.6–82.6 img/s from batch 4 up.",
+        "**Host RAM is the ceiling with 2 and 4 workers:** 32.0 GiB at batch 192 with 2 and 29.3 GiB at 128 "
+        "with 4. Batch 144 with 4 workers ran free host RAM into the 4 GiB reserve and was stopped, and larger "
+        "sizes were skipped on projection. Device memory alone allowed batch 288 (22.9 GiB with 1 worker).",
+        "**About 8–12 ms of device time per image:** a ViT-S over about 3,300 16×16 patches of an 800×1066 "
+        "image. That's faster than DETR (16 ms) and close to RT-DETR R50 (10.7 ms), but about twice "
+        "RT-DETRv2-R18 and D-FINE (5.1 and 4.6 ms), which take 640×640 inputs.",
     ],
 }
 

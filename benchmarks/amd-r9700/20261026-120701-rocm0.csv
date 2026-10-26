@@ -1,0 +1,38 @@
+model,model_id,task,batch_size,num_workers,status,samples_per_second,compute_samples_per_second,latency_p50_ms,latency_p95_ms,data_wait_fraction,peak_allocated_mib,peak_reserved_mib,peak_host_mib,recommended,error
+yolos-small,hustvl/yolos-small,object-detection,1,1,ok,50.779603866482205,52.13349010146927,19.18152799771633,19.457177000731463,0.00969996437610152,323.9,352.0,573.4,False,
+yolos-small,hustvl/yolos-small,object-detection,2,1,ok,46.12469275331746,67.34590171224751,29.697427002247423,33.99491849813785,0.2738344063650793,376.6,412.0,419.3,False,
+yolos-small,hustvl/yolos-small,object-detection,4,1,ok,35.29295423173251,76.60124269926153,52.21847399661783,52.47524724836694,0.5368814407493151,503.2,558.0,618.1,False,
+yolos-small,hustvl/yolos-small,object-detection,8,1,ok,33.25572310993768,80.85292804575265,98.94508700381266,100.15805725197424,0.5865788517333516,758.5,864.0,1023.4,False,
+yolos-small,hustvl/yolos-small,object-detection,16,1,ok,33.21086197922971,83.11043288168567,192.5149400049122,204.10310750412464,0.5940810170588,1267.2,1560.0,1891.1,False,
+yolos-small,hustvl/yolos-small,object-detection,32,1,ok,42.46047303666539,84.60800951194322,378.21478350088,381.2586400017608,0.49691174882649575,2282.2,2814.0,3898.1,False,
+yolos-small,hustvl/yolos-small,object-detection,64,1,ok,33.23466780402111,96.4529949869257,663.5356425031205,669.2912215039541,0.6546110018720707,4310.6,5398.0,7282.0,False,
+yolos-small,hustvl/yolos-small,object-detection,128,1,ok,43.122008547004654,109.83806646820645,1165.3519049978058,1167.1981437484646,0.6072179711766218,8373.4,10556.0,14336.9,False,
+yolos-small,hustvl/yolos-small,object-detection,256,1,ok,42.87166259899816,118.06508831704963,2168.2955024989496,2170.934386746012,0.6367701787773488,16493.7,20880.0,27916.2,False,
+yolos-small,hustvl/yolos-small,object-detection,512,1,oom,,,,,,,,,False,"skipped: needs about 40.6 GiB of device memory (scaled from batch 256), more than the 23.9 GiB budget"
+yolos-small,hustvl/yolos-small,object-detection,384,1,oom,,,,,,,,,False,"skipped: needs about 30.5 GiB of device memory (scaled from batch 256), more than the 23.9 GiB budget"
+yolos-small,hustvl/yolos-small,object-detection,320,1,oom,,,,,,,,,False,"skipped: needs about 25.5 GiB of device memory (scaled from batch 256), more than the 23.9 GiB budget"
+yolos-small,hustvl/yolos-small,object-detection,288,1,ok,40.25371602448622,119.15434192515727,2417.0331970017287,2419.7263927526365,0.6620586369180016,18521.8,23466.0,28773.3,False,
+yolos-small,hustvl/yolos-small,object-detection,1,2,ok,63.79491669505071,68.7180776531185,14.552211501722923,16.829499745654175,0.030409820667736117,323.9,352.0,421.0,False,
+yolos-small,hustvl/yolos-small,object-detection,2,2,ok,73.5263027787606,82.46008957792215,24.25415749894455,26.742025247585843,0.08872022602325827,376.6,412.0,643.3,False,
+yolos-small,hustvl/yolos-small,object-detection,4,2,ok,59.33983566814891,75.85072706134888,52.7351569980965,60.32492775193532,0.1840561336469492,503.2,558.0,906.5,False,
+yolos-small,hustvl/yolos-small,object-detection,8,2,ok,56.00870367201731,80.62465036343913,99.22523649947834,100.04544975345198,0.30197952842402337,758.5,864.0,1303.4,False,
+yolos-small,hustvl/yolos-small,object-detection,16,2,ok,59.39644380193709,83.27652919864707,192.1309659992403,193.86940025106014,0.28588843661885743,1267.2,1560.0,2455.9,False,
+yolos-small,hustvl/yolos-small,object-detection,32,2,ok,59.19994135654313,94.87494641443708,337.28609300305834,380.9631434996845,0.37533431663837147,2282.2,2814.0,4817.1,False,
+yolos-small,hustvl/yolos-small,object-detection,64,2,ok,63.39345502778748,107.48137007710217,595.4520300037984,694.3036397497053,0.40718962303243317,4310.6,5398.0,9608.2,False,
+yolos-small,hustvl/yolos-small,object-detection,128,2,ok,65.6446499242346,109.88935265544939,1164.8080265003955,1172.3151434998726,0.42766656376435086,8373.4,10556.0,18925.4,False,
+yolos-small,hustvl/yolos-small,object-detection,256,2,host-oom,,,,,,,,,False,"skipped: needs about 37.0 GiB of host RAM (scaled from batch 128), 31.8 GiB is free above the 4.0 GiB reserve"
+yolos-small,hustvl/yolos-small,object-detection,192,2,ok,66.33412236335197,122.70376880271897,1564.7441140026785,1673.3792519971757,0.44690694079320753,12432.9,15728.0,32749.9,False,
+yolos-small,hustvl/yolos-small,object-detection,224,2,host-oom,,,,,,,,,False,"skipped: needs about 44.0 GiB of host RAM (scaled from batch 192), 30.8 GiB is free above the 4.0 GiB reserve"
+yolos-small,hustvl/yolos-small,object-detection,208,2,host-oom,,,,,,,,,False,"skipped: needs about 33.0 GiB of host RAM (scaled from batch 192), 30.8 GiB is free above the 4.0 GiB reserve"
+yolos-small,hustvl/yolos-small,object-detection,1,4,ok,74.49889332129293,78.31687328386272,12.768640499416506,14.627369253503275,0.012533889373659327,323.9,352.0,666.5,False,
+yolos-small,hustvl/yolos-small,object-detection,2,4,ok,84.17980091121991,86.04952421515793,23.242429499077844,27.608503498413484,0.03321975641892255,376.6,412.0,1023.9,True,
+yolos-small,hustvl/yolos-small,object-detection,4,4,ok,80.81487191012286,106.06801454697779,37.711651501012966,47.338530250272015,0.17916036089349716,503.2,558.0,1376.4,False,
+yolos-small,hustvl/yolos-small,object-detection,8,4,ok,74.73848576129777,107.11528763165579,74.68588449773961,92.45738724712282,0.27786155764882575,758.5,864.0,1941.3,False,
+yolos-small,hustvl/yolos-small,object-detection,16,4,ok,73.57781413604305,108.9283507348187,146.88554349777405,182.7590387474629,0.2409345658315936,1267.2,1560.0,3863.7,False,
+yolos-small,hustvl/yolos-small,object-detection,32,4,ok,74.09725874401029,113.96589241041266,280.78576250482,314.9404682499153,0.3113275410475845,2282.2,2814.0,7493.1,False,
+yolos-small,hustvl/yolos-small,object-detection,64,4,ok,80.42953702772579,118.95788262922996,538.0055409987108,621.5025732471986,0.29365022929851425,4310.6,5398.0,14805.9,False,
+yolos-small,hustvl/yolos-small,object-detection,128,4,ok,82.56918923563703,120.92498666385882,1058.5074559967325,1153.2191990008869,0.2750831679112777,8373.4,10556.0,29980.0,False,
+yolos-small,hustvl/yolos-small,object-detection,256,4,host-oom,,,,,,,,,False,"skipped: needs about 58.6 GiB of host RAM (scaled from batch 128), 31.8 GiB is free above the 4.0 GiB reserve"
+yolos-small,hustvl/yolos-small,object-detection,192,4,host-oom,,,,,,,,,False,"skipped: needs about 41.4 GiB of host RAM (scaled from batch 128), 31.8 GiB is free above the 4.0 GiB reserve"
+yolos-small,hustvl/yolos-small,object-detection,160,4,host-oom,,,,,,,,,False,"skipped: needs about 37.8 GiB of host RAM (scaled from batch 128), 31.8 GiB is free above the 4.0 GiB reserve"
+yolos-small,hustvl/yolos-small,object-detection,144,4,host-oom,,,,,,9386.8,11854.0,35836.8,False,stopped: free host RAM fell below the 4.0 GiB reserve
