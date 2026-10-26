@@ -42,7 +42,11 @@ can't keep up. This tool catches that case and tells you.
 
 1. **Sweep.** Batch sizes double (1, 2, 4, …) until a trial runs out of memory
    or reaches `--max-batch-size`. Then up to `--refine-steps` bisection trials,
-   in multiples of 8, narrow in on the largest batch that fits.
+   in multiples of 8, narrow in on the largest batch that fits. A batch whose
+   memory, scaled up from the largest one that fit, would exceed the usable
+   memory is skipped and reported as `oom` rather than run. Asking a GPU for
+   far more than it has isn't harmless: on the R9700 such trials pushed memory
+   several GiB past PyTorch's cap, enough to crash a desktop on the same GPU.
 2. **Recommend.** The pick is the *smallest* batch within `--tolerance` (5%)
    of the best end-to-end throughput whose peak memory stays under
    `1 - --memory-headroom` (90%) of the *usable* memory. Past the knee of the

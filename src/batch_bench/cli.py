@@ -405,7 +405,7 @@ def benchmark_model(
     console.print(f"\n[bold]{escape(spec.name)}[/bold]: loading {escape(spec.model_id)}")
     try:
         loaded = load_model(spec, revision=revision)
-        runner = TrialRunner(loaded, accelerator, source, settings)
+        runner = TrialRunner(loaded, accelerator, source, settings, device_budget=plan.memory_budget_bytes)
     except Exception as exc:  # network, gated repo, unsupported architecture, OOM on load
         report.error = f"failed to load: {type(exc).__name__}: {exc}"
         console.print(f"[red]{escape(report.error)}[/red]")

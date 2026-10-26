@@ -316,6 +316,47 @@ class TestHostMemory:
         assert TrialRunner(segmenter, cpu, tiny_source, settings, host=host)(batch_size=1, num_workers=0).ok
 
 
+class TestDeviceMemory:
+    """Batch sizes projected past the device-memory budget are skipped instead of run."""
+
+    @pytest.fixture
+    def module(self, make_device_module, monkeypatch: pytest.MonkeyPatch) -> Any:
+        monkeypatch.setattr(Accelerator, "device", property(lambda self: torch.device("cpu")))
+        module = make_device_module()
+        module.reserved = 1 * GIB  # held before any trial: the weights
+        return module
+
+    def runner(self, segmenter, module, tiny_source, budget: int | None) -> TrialRunner:
+        settings = replace(FAST, pin_memory=False)
+        return TrialRunner(
+            segmenter, Accelerator(Backend.CUDA, module=module), tiny_source, settings, device_budget=budget
+        )
+
+    def test_batches_projected_past_the_budget_are_skipped(self, segmenter, module, tiny_source):
+        runner = self.runner(segmenter, module, tiny_source, budget=10 * GIB)
+        module.reserved = 3 * GIB  # 1 GiB of weights + 1 GiB per image
+        assert runner(batch_size=2, num_workers=0).ok  # nothing to project from yet
+        module.reserved = 9 * GIB
+        assert runner(batch_size=8, num_workers=0).ok  # 1 + 2 x 8 / 2 = 9 GiB fits
+        skipped = runner(batch_size=16, num_workers=0)  # 1 + 8 x 16 / 8 = 17 GiB
+        assert skipped.status is TrialStatus.OOM
+        assert skipped.error == (
+            "skipped: needs about 17.0 GiB of device memory (scaled from batch 8), more than the 10.0 GiB budget"
+        )
+        assert skipped.peak_reserved_bytes is None
+        # Device memory doesn't depend on the worker count, so one projection serves all of them.
+        assert runner(batch_size=16, num_workers=1).status is TrialStatus.OOM
+        # Sizes up to the largest that fit always run, and don't replace the reference.
+        assert runner(batch_size=4, num_workers=1).ok
+        assert runner._device_reference == (8, 9 * GIB)
+
+    def test_without_a_budget_nothing_is_skipped(self, segmenter, module, tiny_source):
+        runner = self.runner(segmenter, module, tiny_source, budget=None)
+        module.reserved = 9 * GIB
+        assert runner(batch_size=1, num_workers=0).ok
+        assert runner(batch_size=64, num_workers=0).ok
+
+
 def test_kill_workers_leaves_no_signal_to_raise_later():
     batches: Any = iter(DataLoader(TensorDataset(torch.arange(64)), batch_size=2, num_workers=2))
     next(batches)

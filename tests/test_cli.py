@@ -6,6 +6,7 @@ import os
 import runpy
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -267,12 +268,21 @@ def test_busy_gpu_shrinks_the_memory_budget(
 ):
     monkeypatch.setattr(Accelerator, "total_memory", lambda self: 32 * GIB)
     monkeypatch.setattr(Accelerator, "free_memory", lambda self: 20 * GIB)
+    budgets: list[int | None] = []
+    make_runner = cli.TrialRunner
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        budgets.append(kwargs.get("device_budget"))
+        return make_runner(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "TrialRunner", spy)
     code = main(["run", "-m", str(tiny_segmenter_dir), "--batch-sizes", "1", *QUICK, "--output-dir", str(tmp_path)])
     out = unwrapped(capsys.readouterr().out)
     assert code == 0
     assert "12.0 GiB of 32.0 GiB is already in use" in out
     (json_path,) = tmp_path.glob("*.json")
     assert json.loads(json_path.read_text())["settings"]["memory_budget_bytes"] == 20 * GIB
+    assert budgets == [20 * GIB]  # the same budget guards the sweep
 
 
 def test_mixed_size_folders_turn_autotuning_off(
