@@ -1,12 +1,11 @@
 """Host RAM: how much is free, a per-trial monitor, and projections for larger batches.
 
 Host memory grows with the batch size times the worker count. Every DataLoader
-worker decodes and preprocesses a whole batch at once, and up to
-``prefetch_factor * num_workers`` finished batches wait in the main process,
-pinned and rounded up to a power of two. A sweep that doubles the batch until
-the GPU runs out of memory can exhaust host RAM first. The kernel's OOM killer
-then picks a victim, which may be the desktop session rather than the
-benchmark.
+worker builds a whole batch, and up to ``prefetch_factor * num_workers``
+finished batches wait in the main process, pinned and rounded up to a power of
+two. A sweep that doubles the batch until the GPU runs out of memory can
+exhaust host RAM first. The kernel's OOM killer then picks a victim, which may
+be the desktop session rather than the benchmark.
 """
 
 from __future__ import annotations
@@ -116,8 +115,8 @@ class HostFootprint:
     def project(self, batch_size: int) -> int:
         """Host RAM a trial at ``batch_size`` should take.
 
-        Most of the footprint grows linearly with the batch: the workers'
-        decoded images and intermediates, and batches in shared memory. Pinned
+        Most of the footprint grows linearly with the batch: the batches
+        workers are building, and batches in shared memory. Pinned
         batches grow in steps instead, because the allocator rounds each
         tensor's buffer up to a power of two. A batch 1.75x the size can need
         twice the pinned memory, and one 1.25x the size may need no more.

@@ -9,16 +9,17 @@ overstate the useful batch size whenever the input pipeline is the bottleneck.
 from __future__ import annotations
 
 import io
+import math
 import random
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast, overload
 
 import numpy as np
 import torch
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, get_worker_info
 
 # (width, height), matching PIL's convention.
 ImageSize = tuple[int, int]
@@ -26,12 +27,19 @@ ImageSize = tuple[int, int]
 DEFAULT_IMAGE_SIZE: ImageSize = (640, 480)
 IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp"})
 
+# Images per image-processor call with ``--preprocess batch``. Passing a whole
+# batch at once held about seven times the batch per worker in decoded images
+# and processor intermediates: 1 GiB for clip-vit-b32 at batch 256. Chunks of
+# 32 cut that to about twice the batch, the chunks' outputs plus the assembled
+# batch, at nearly the same speed; 16 and 64 were both slower.
+PROCESSOR_CHUNK_SIZE = 32
+
 
 class PreprocessMode(StrEnum):
     """Where the HuggingFace image processor runs inside the DataLoader workers."""
 
-    # The processor sees the whole batch in ``collate_fn``; fast (torchvision)
-    # processors vectorize this and pad mixed sizes themselves.
+    # The processor runs in ``collate_fn`` on chunks of the batch; fast
+    # (torchvision) processors vectorize each chunk and pad mixed sizes themselves.
     BATCH = "batch"
     # The processor runs once per image in ``__getitem__``, the classic pattern.
     SAMPLE = "sample"
@@ -212,6 +220,38 @@ class ImageDataset(Dataset[Image.Image]):
             raise IndexError(index)
         return self.source.load(index)
 
+    def __getitems__(self, indices: list[int]) -> LazyImages:
+        """One batch's images, decoded when read rather than all up front.
+
+        The DataLoader passes whatever this returns to ``collate_fn``, which
+        :class:`BatchProcessorCollator` reads a chunk at a time. Decoding still
+        happens in the worker and costs the same, but only one chunk of
+        decoded pixels is held at once instead of the whole batch.
+        """
+        return LazyImages(self, indices)
+
+
+class LazyImages(Sequence[Image.Image]):
+    """The images at ``indices`` in ``dataset``, decoded on every access."""
+
+    def __init__(self, dataset: ImageDataset, indices: Sequence[int]) -> None:
+        self.dataset = dataset
+        self.indices = indices
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    @overload
+    def __getitem__(self, index: int) -> Image.Image: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[Image.Image]: ...
+
+    def __getitem__(self, index: int | slice) -> Image.Image | list[Image.Image]:
+        if isinstance(index, slice):
+            return [self.dataset[i] for i in self.indices[index]]
+        return self.dataset[self.indices[index]]
+
 
 def _tensors_only(features: Mapping[str, Any]) -> dict[str, torch.Tensor]:
     return {key: value for key, value in features.items() if isinstance(value, torch.Tensor)}
@@ -234,35 +274,106 @@ class PreprocessedDataset(Dataset[dict[str, torch.Tensor]]):
 
 
 class BatchProcessorCollator:
-    """``collate_fn`` that preprocesses a whole batch at once (``--preprocess batch``)."""
+    """``collate_fn`` that preprocesses a batch in chunks (``--preprocess batch``).
 
-    def __init__(self, processor: ImageProcessor) -> None:
+    The processor sees ``chunk_size`` images per call, so its intermediates
+    scale with the chunk rather than the batch. Processors that keep aspect
+    ratio (DETR, YOLOS) pad each call to its largest image, so chunks of mixed
+    sizes come back in different shapes; they are zero-padded to the largest
+    at the bottom and right, as the processor pads a single call.
+    """
+
+    def __init__(self, processor: ImageProcessor, chunk_size: int = PROCESSOR_CHUNK_SIZE) -> None:
+        if chunk_size < 1:
+            raise ValueError("chunk_size must be at least 1")
         self.processor = processor
+        self.chunk_size = chunk_size
 
-    def __call__(self, images: list[Image.Image]) -> dict[str, torch.Tensor]:
+    def __call__(self, images: Sequence[Image.Image]) -> dict[str, torch.Tensor]:
         """Preprocess ``images`` into one batch of tensors."""
-        return _tensors_only(self.processor(images=images, return_tensors="pt"))
+        if not images:
+            raise ValueError("cannot collate an empty batch")
+        chunks = [
+            _tensors_only(self.processor(images=list(images[start : start + self.chunk_size]), return_tensors="pt"))
+            for start in range(0, len(images), self.chunk_size)
+        ]
+        return _assemble({key: [chunk[key] for chunk in chunks] for key in chunks[0]})
 
 
 def pad_collate(samples: Sequence[Mapping[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
     """Stack per-sample tensors, zero-padding trailing dimensions when shapes differ."""
     if not samples:
         raise ValueError("cannot collate an empty batch")
-    batch: dict[str, torch.Tensor] = {}
-    for key in samples[0]:
-        tensors = [sample[key] for sample in samples]
-        first = tensors[0]
-        if all(tensor.shape == first.shape for tensor in tensors):
-            batch[key] = torch.stack(tensors)
-            continue
-        if any(tensor.dim() != first.dim() for tensor in tensors):
+    return _assemble({key: [sample[key].unsqueeze(0) for sample in samples] for key in samples[0]})
+
+
+def _assemble(parts: Mapping[str, list[torch.Tensor]]) -> dict[str, torch.Tensor]:
+    """Concatenate each key's parts along dimension 0 into one batch tensor.
+
+    Inside a DataLoader worker the values are :class:`_PaddedConcat`
+    placeholders that become tensors on the way to the main process.
+    """
+    batch = {key: _PaddedConcat(key, tensors) for key, tensors in parts.items()}
+    if get_worker_info() is None:
+        return {key: concat.run() for key, concat in batch.items()}
+    return cast("dict[str, torch.Tensor]", batch)
+
+
+class _PaddedConcat:
+    """Tensors to concatenate along dimension 0, zero-padding trailing dimensions to the largest.
+
+    Inside a DataLoader worker this runs when the batch is pickled. Workers
+    send batches through a multiprocessing queue whose feeder thread pickles
+    them, and PyTorch copies each tensor into shared memory there. Building the
+    batch straight into shared memory at that point replaces that copy, and
+    leaves the worker free to start its next batch. Concatenating in
+    ``collate_fn`` instead was 9% slower for clip-vit-b32 with 4 workers and
+    20% slower for DETR with 2, where spare cores ran the feeder threads.
+    Shapes are checked here, up front, because an error while pickling is only
+    logged by the feeder thread and the batch never arrives.
+    """
+
+    def __init__(self, key: str, parts: list[torch.Tensor]) -> None:
+        first = parts[0]
+        if any(part.dim() != first.dim() for part in parts):
             raise ValueError(f"cannot pad {key!r}: samples have different ranks")
-        max_shape = [max(tensor.shape[dim] for tensor in tensors) for dim in range(first.dim())]
-        padded = first.new_zeros((len(tensors), *max_shape))
-        for row, tensor in enumerate(tensors):
-            padded[(row, *(slice(0, size) for size in tensor.shape))] = tensor
-        batch[key] = padded
-    return batch
+        trailing = (max(part.shape[dim] for part in parts) for dim in range(1, first.dim()))
+        self.shape = (sum(len(part) for part in parts), *trailing)
+        self.parts = parts
+
+    def run(self) -> torch.Tensor:
+        """Build the batch tensor, once: the parts are released so they free before the next key is built."""
+        parts, self.parts = self.parts, []
+        out = _new_batch(parts[0], self.shape)
+        if all(part.shape[1:] == out.shape[1:] for part in parts):
+            return torch.cat(parts, out=out)
+        row = 0
+        for part in parts:
+            rows = out[row : row + len(part)]
+            if part.shape[1:] != out.shape[1:]:
+                rows.zero_()
+            rows[(slice(None), *(slice(0, size) for size in part.shape[1:]))] = part
+            row += len(part)
+        return out
+
+    def __reduce__(self) -> tuple[Callable[[torch.Tensor], torch.Tensor], tuple[torch.Tensor]]:
+        return _identity, (self.run(),)
+
+
+def _identity(tensor: torch.Tensor) -> torch.Tensor:
+    return tensor
+
+
+def _new_batch(like: torch.Tensor, shape: tuple[int, ...]) -> torch.Tensor:
+    """An uninitialized tensor for a batch, in shared memory inside a DataLoader worker.
+
+    Workers hand batches to the main process through shared memory, so
+    building the batch there, as ``default_collate`` does, saves a copy.
+    """
+    if get_worker_info() is None:
+        return like.new_empty(shape)
+    storage = like._typed_storage()._new_shared(math.prod(shape), device=like.device)
+    return like.new(storage).resize_(shape)
 
 
 def build_loader(
