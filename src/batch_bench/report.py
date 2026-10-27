@@ -254,17 +254,24 @@ def write_reports(report: RunReport, output_dir: Path) -> tuple[Path, Path]:
     """Write ``<timestamp>-<backend><index>.json`` and ``.csv`` into ``output_dir``.
 
     Runs started in the same second (e.g. one per GPU) get a numeric suffix
-    instead of overwriting each other.
+    instead of overwriting each other. The JSON file is created exclusively,
+    so two runs finishing at once can't both claim a name they saw as free.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     base = f"{report.created_at:%Y%m%d-%H%M%S}-{report.device.backend}{report.device.index}"
-    stem, attempt = base, 1
-    while (output_dir / f"{stem}.json").exists() or (output_dir / f"{stem}.csv").exists():
+    attempt = 0
+    while True:
         attempt += 1
-        stem = f"{base}-{attempt}"
-    json_path = output_dir / f"{stem}.json"
-    csv_path = output_dir / f"{stem}.csv"
-    json_path.write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")
+        stem = base if attempt == 1 else f"{base}-{attempt}"
+        json_path, csv_path = output_dir / f"{stem}.json", output_dir / f"{stem}.csv"
+        if csv_path.exists():
+            continue
+        try:
+            with json_path.open("x", encoding="utf-8") as handle:
+                handle.write(json.dumps(report.to_dict(), indent=2) + "\n")
+        except FileExistsError:
+            continue
+        break
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         writer.writeheader()

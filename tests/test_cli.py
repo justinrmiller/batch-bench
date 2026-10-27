@@ -263,6 +263,15 @@ def test_interrupt_keeps_finished_trials(
     assert model["recommendation"]["recommended"]["batch_size"] == 1
 
 
+def test_seed_and_revision_are_recorded(tiny_segmenter_dir: Path, tmp_path: Path):
+    # Both change what runs (the synthetic pixels, the checkpoint), so a result must say which were used.
+    argv = ["run", "-m", str(tiny_segmenter_dir), "--batch-sizes", "1", *QUICK, "--seed", "7"]
+    assert main([*argv, "--output-dir", str(tmp_path)]) == 0
+    (json_path,) = tmp_path.glob("*.json")
+    settings = json.loads(json_path.read_text())["settings"]
+    assert (settings["seed"], settings["revision"]) == (7, None)
+
+
 def test_busy_gpu_shrinks_the_memory_budget(
     tiny_segmenter_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):

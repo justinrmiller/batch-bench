@@ -491,9 +491,14 @@ def reproduce(run: Run) -> str:
         "host_memory_reserve": ("--host-memory-reserve", 0.1),
         "preprocess": ("--preprocess", "batch"),
         "mp_context": ("--mp-context", None),
+        "seed": ("--seed", 0),
+        "revision": ("--revision", None),
     }
     # Runs recorded before a setting existed used its default.
     parts += [f"{flag} {s[key]}" for key, (flag, default) in defaults.items() if s.get(key, default) != default]
+    # Folder images without --image-size turn autotuning off by themselves; otherwise it was a choice.
+    if not s.get("cudnn_benchmark", True) and (s["image_source"] == "synthetic" or s["image_size"]):
+        parts.append("--no-cudnn-benchmark")
     # Unset caps MPS at 1.0 and other GPUs at DEFAULT_MEMORY_FRACTION. Runs from
     # before that default recorded an uncapped GPU as None, which is 1.0 today.
     if device["backend"] != "cpu":
