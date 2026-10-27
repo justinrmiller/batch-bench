@@ -206,6 +206,17 @@ def test_reports_started_in_the_same_second_do_not_overwrite(tmp_path: Path):
     assert json.loads(second[0].read_text())["settings"] == {"run": 2}
 
 
+def test_a_name_taken_after_the_check_is_not_overwritten(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Two processes finishing together can both see a name as free; only one may write it.
+    monkeypatch.setattr(Path, "exists", lambda self: False)
+    created = datetime(2026, 10, 17, 12, 30, 5, tzinfo=UTC)
+    first = write_reports(RunReport(device=DEVICE, settings={"run": 1}, created_at=created), tmp_path)
+    second = write_reports(RunReport(device=DEVICE, settings={"run": 2}, created_at=created), tmp_path)
+    assert first[0] != second[0]
+    assert json.loads(first[0].read_text())["settings"] == {"run": 1}
+    assert json.loads(second[0].read_text())["settings"] == {"run": 2}
+
+
 def test_model_report_without_recommendation_serializes():
     data = ModelReport(spec=PRESETS["yolos-small"], error="boom").to_dict()
     assert data["recommendation"] is None

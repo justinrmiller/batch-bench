@@ -20,8 +20,9 @@ class Recommendation:
             leave room for larger inputs at no real throughput cost.
         fastest: Highest end-to-end throughput observed.
         largest_fit: Largest batch size that ran.
-        first_oom: Smallest batch size that ran out of device memory, if any.
-            Host RAM limits are reported in ``notes``.
+        first_oom: Smallest batch size that ran out of device memory, or was
+            skipped as projected to, if any. Host RAM limits are reported in
+            ``notes``.
         notes: Human-readable caveats, such as an input-bound pipeline.
     """
 

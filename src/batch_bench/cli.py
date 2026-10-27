@@ -516,6 +516,8 @@ def run_command(args: argparse.Namespace, console: Console) -> int:
         "image_source": str(args.image_dir) if args.image_dir else "synthetic",
         "image_size": list(args.image_size or DEFAULT_IMAGE_SIZE) if args.image_dir is None else args.image_size,
         "memory_fraction": memory_fraction,
+        "seed": args.seed,
+        "revision": args.revision,
     }
     run_report = RunReport(device=info, settings=recorded)
     exit_code = 0
