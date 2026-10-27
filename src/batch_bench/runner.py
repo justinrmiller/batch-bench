@@ -56,7 +56,7 @@ class TrialStatus(StrEnum):
     """Outcome of one trial."""
 
     OK = "ok"
-    OOM = "oom"  # device memory ran out
+    OOM = "oom"  # device memory would run out (skipped) or ran out
     HOST_OOM = "host-oom"  # host RAM would run out (skipped) or ran low (stopped)
     ERROR = "error"
 
@@ -211,6 +211,10 @@ class TrialRunner:
     :class:`TrialResult`. Out-of-memory errors are caught and reported, so a
     sweep can probe until the device is full.
 
+    A batch size projected to need more than ``device_budget`` bytes of device
+    memory is skipped and reported as :attr:`TrialStatus.OOM` instead of run;
+    see :meth:`_device_shortfall`. None (the CPU) disables the check.
+
     Host RAM is guarded too, since it can run out before device memory does.
     A batch size projected to need more than is free above
     ``settings.host_memory_reserve`` is skipped, and a trial that cuts into the
@@ -226,6 +230,7 @@ class TrialRunner:
         source: ImageSource,
         settings: TrialSettings,
         host: HostMemory | None = None,
+        device_budget: int | None = None,
     ) -> None:
         self.spec = loaded.spec
         self.processor = loaded.processor
@@ -237,6 +242,10 @@ class TrialRunner:
         self.host_floor = int(self.host.total() * settings.host_memory_reserve)
         # The largest successful trial per worker count, to project host RAM from.
         self._host_reference: dict[int, HostFootprint] = {}
+        self.device_budget = device_budget
+        # (batch size, peak reserved bytes) of the largest successful trial at any
+        # worker count, to project device memory from.
+        self._device_reference: tuple[int, int] | None = None
         # Per-sample output shape (e.g. (512,) for an embedding), set by the first step.
         self.output_shape: tuple[int, ...] | None = None
         if accelerator.supports_cudnn_benchmark:
@@ -244,13 +253,18 @@ class TrialRunner:
             # this drives MIOpen's kernel search, which the warmup batches absorb.
             torch.backends.cudnn.benchmark = settings.cudnn_benchmark
         self.model = loaded.model.to(accelerator.device)
+        # Device memory held before any trial: mostly the weights, which don't grow with the batch.
+        accelerator.reset_peak_memory()
+        accelerator.sample_memory()
+        self._device_baseline = accelerator.peak_memory().reserved or 0
 
     def __call__(self, batch_size: int, num_workers: int) -> TrialResult:
         """Measure one configuration."""
         if batch_size < 1:
             raise ValueError("batch_size must be >= 1")
-        shortfall = self._host_shortfall(batch_size, num_workers)
-        if shortfall is not None:
+        if (shortfall := self._device_shortfall(batch_size)) is not None:
+            return TrialResult(batch_size=batch_size, num_workers=num_workers, status=TrialStatus.OOM, error=shortfall)
+        if (shortfall := self._host_shortfall(batch_size, num_workers)) is not None:
             return TrialResult(
                 batch_size=batch_size, num_workers=num_workers, status=TrialStatus.HOST_OOM, error=shortfall
             )
@@ -332,6 +346,10 @@ class TrialRunner:
         reference = self._host_reference.get(num_workers)
         if reference is None or batch_size >= reference.batch_size:
             self._host_reference[num_workers] = HostFootprint(batch_size, peak_host, peak_pinned, tensor_bytes)
+        if memory.reserved is not None and (
+            self._device_reference is None or (batch_size, memory.reserved) > self._device_reference
+        ):
+            self._device_reference = (batch_size, memory.reserved)
         wall = finished - started
         median_compute = float(np.median(computes))
         return TrialResult(
@@ -347,6 +365,32 @@ class TrialRunner:
             peak_reserved_bytes=memory.reserved,
             peak_host_bytes=peak_host,
             measured_batches=measure,
+        )
+
+    def _device_shortfall(self, batch_size: int) -> str | None:
+        """Why ``batch_size`` would run out of device memory, or None if it should fit.
+
+        Device memory is what the model holds before any trial plus activations
+        that grow with the batch, so the need is extrapolated along the line
+        through that baseline and the largest successful trial at any worker
+        count. The line also scales a trial's fixed overheads (workspaces, the
+        allocator's rounding), so it slightly overestimates, which errs toward
+        skipping. Running a batch far past the
+        budget isn't a harmless OOM: on ROCm the runtime used several GiB beyond
+        PyTorch's cap while such a trial failed, enough to starve a desktop on
+        the same GPU. Until a trial succeeds nothing is skipped.
+        """
+        reference = self._device_reference
+        if self.device_budget is None or reference is None or batch_size <= reference[0]:
+            return None
+        reference_batch, reference_bytes = reference
+        baseline = min(self._device_baseline, reference_bytes)
+        needed = baseline + (reference_bytes - baseline) * batch_size // reference_batch
+        if needed <= self.device_budget:
+            return None
+        return (
+            f"skipped: needs about {_gib(needed)} of device memory (scaled from batch {reference_batch}), "
+            f"more than the {_gib(self.device_budget)} budget"
         )
 
     def _host_shortfall(self, batch_size: int, num_workers: int) -> str | None:

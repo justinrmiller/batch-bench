@@ -1,0 +1,37 @@
+model,model_id,task,batch_size,num_workers,status,samples_per_second,compute_samples_per_second,latency_p50_ms,latency_p95_ms,data_wait_fraction,peak_allocated_mib,peak_reserved_mib,peak_host_mib,recommended,error
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,1,1,ok,56.13470037826057,56.794897532512614,17.607215497264406,17.979025000386173,0.007195444150955639,247.7,298.0,762.8,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,2,1,ok,100.42413127532042,99.96128250691073,20.00774649786763,20.429970252735075,0.006587876371328201,318.0,486.0,347.3,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,4,1,ok,125.1952608380389,157.88979966274096,25.3341255011037,29.074933749143383,0.18174547304173483,478.5,824.0,451.5,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,8,1,ok,107.76006521424294,134.43309914587667,59.509154001716524,59.7593987477012,0.19750024649993586,804.0,1428.0,551.2,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,16,1,ok,116.88051851506262,140.79692617645028,113.63884450111073,126.86790900079359,0.15724710169776376,1455.5,2664.0,897.7,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,32,1,ok,92.90707885405374,143.66163325280095,222.74562299935496,223.38600950206455,0.3523046348741546,2753.5,5086.0,1529.3,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,64,1,ok,121.71997868914212,146.5934989799621,436.58143400170957,437.6151859960373,0.1703567016861088,5353.5,10168.0,2675.0,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,128,1,ok,123.65739745270486,162.55045039760066,787.4478334997548,789.9788225004158,0.23864285347734873,10553.5,20156.0,4933.9,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,256,1,oom,,,,,,,,,False,"skipped: needs about 39.3 GiB of device memory (scaled from batch 128), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,192,1,oom,,,,,,,,,False,"skipped: needs about 29.5 GiB of device memory (scaled from batch 128), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,160,1,oom,,,,,,,,,False,"skipped: needs about 24.6 GiB of device memory (scaled from batch 128), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,144,1,ok,117.71794493456306,166.39247593999934,865.4237469963846,866.9853114988655,0.2928969910669837,11855.5,22664.0,5108.9,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,1,2,ok,57.116443644220055,56.73267827140772,17.626525495870737,18.16340475306788,0.006951667357215436,247.7,272.0,352.4,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,2,2,ok,98.18077829139834,97.19901593599212,20.576340004481608,23.10144800321723,0.0063281347128118165,318.0,430.0,439.5,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,4,2,ok,136.7927794053156,134.28813539069054,29.7866970031464,30.564070750187966,0.011939889316727566,478.5,654.0,533.3,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,8,2,ok,176.77304496619826,180.05106653351163,44.43183900002623,48.75895825171028,0.004076603229055998,804.0,1156.0,768.0,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,16,2,ok,180.56423998775296,176.99248180727383,90.39931999723194,95.20955274820153,0.0022684616964939066,1455.5,2014.0,1281.0,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,32,2,ok,190.06520798010953,197.30702972972847,162.1837804959796,185.91336175268225,0.0013515251016886567,2753.5,3848.0,2103.5,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,64,2,ok,191.4586196408833,196.9744751393652,324.9151950003579,359.2993032452796,0.0006374162280548606,5353.5,7524.0,3168.8,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,128,2,ok,194.84806085958448,195.44442871708978,654.9176195003383,666.8447339998238,0.00034090181222693394,10553.5,14878.0,5825.5,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,256,2,oom,,,,,,,,,False,"skipped: needs about 39.3 GiB of device memory (scaled from batch 144), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,192,2,oom,,,,,,,,,False,"skipped: needs about 29.5 GiB of device memory (scaled from batch 144), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,160,2,oom,,,,,,,,,False,"skipped: needs about 24.6 GiB of device memory (scaled from batch 144), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,144,2,ok,188.83822072299614,191.4609743027441,752.1114970004419,804.7529295035929,0.0003204473936483769,11855.5,16720.0,6370.2,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,1,4,ok,58.83197504391369,59.66856972214451,16.7592420039,17.916637500093202,0.006144646777331339,247.7,272.0,457.0,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,2,4,ok,107.69742290781049,107.4153459116524,18.61931349776569,20.54033249805798,0.005515144577735554,318.0,430.0,608.3,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,4,4,ok,161.87378456073876,162.28387287298193,24.648167000123067,27.24647700051719,0.005522066198248873,478.5,654.0,726.3,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,8,4,ok,180.06262721807414,190.2346671957461,42.053323497384554,49.63128175040765,0.0034372281582473307,804.0,1156.0,1095.4,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,16,4,ok,191.93331219515815,197.11889178995511,81.169287503144,94.15738549614616,0.002002445499352031,1455.5,2014.0,1828.1,True,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,32,4,ok,191.83929466418647,198.49727882468542,161.21127800579416,183.6483467486687,0.000984463435485616,2753.5,3848.0,3358.0,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,64,4,ok,192.19470576539652,197.32904895651257,324.3313660022977,377.4712510021345,0.0005062534333148872,5353.5,7524.0,5763.7,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,128,4,ok,194.4734042612285,195.73908687022904,653.9317315036897,676.0259045040584,0.0003122841181118252,10553.5,14878.0,10509.7,False,
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,256,4,oom,,,,,,,,,False,"skipped: needs about 39.3 GiB of device memory (scaled from batch 144), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,192,4,oom,,,,,,,,,False,"skipped: needs about 29.5 GiB of device memory (scaled from batch 144), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,160,4,oom,,,,,,,,,False,"skipped: needs about 24.6 GiB of device memory (scaled from batch 144), more than the 23.9 GiB budget"
+rtdetr-v2-r18,PekingU/rtdetr_v2_r18vd,object-detection,144,4,ok,194.6589999250469,195.486672532473,736.6231064988824,751.5326027496485,0.0002701216365020663,11855.5,16720.0,10841.1,False,

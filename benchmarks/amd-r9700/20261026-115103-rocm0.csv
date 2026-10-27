@@ -1,0 +1,40 @@
+model,model_id,task,batch_size,num_workers,status,samples_per_second,compute_samples_per_second,latency_p50_ms,latency_p95_ms,data_wait_fraction,peak_allocated_mib,peak_reserved_mib,peak_host_mib,recommended,error
+dfine-small,ustc-community/dfine-small-coco,object-detection,1,1,ok,42.647579429179075,42.90028307736666,23.30986949891667,23.89598800073145,0.005489535111271461,180.5,202.0,868.6,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,2,1,ok,79.53196611094435,79.26844422467482,25.230720995750744,25.478610001300694,0.0050663975329827225,245.7,286.0,349.0,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,4,1,ok,138.73875236412258,150.37985197064816,26.599308002914768,33.28790224986733,0.005356521107110328,376.8,466.0,438.9,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,8,1,ok,98.97022616263948,144.14665956015025,55.499031503131846,56.16535724948335,0.3080216018614245,629.5,734.0,583.2,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,16,1,ok,115.97782453260905,153.2884565420799,104.37837499921443,105.0371412475215,0.24108468270520056,1142.0,1392.0,883.1,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,32,1,ok,90.34995439304195,157.45931366984405,203.22710199980065,213.5129782527656,0.41839784633637567,2161.0,2618.0,1537.9,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,64,1,ok,119.7562385388063,159.93197493404483,400.1701349989162,404.6561684990593,0.24898523308470738,4204.0,5068.0,2695.6,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,128,1,ok,117.51069326010426,175.82613273521252,727.9918975000328,731.7471572478098,0.33063280287824015,8292.0,9992.0,5067.1,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,256,1,ok,117.29030672184733,195.1042890021602,1312.1187715005362,1327.3942412524775,0.39771823267224715,16468.0,19838.0,9486.7,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,512,1,oom,,,,,,,,,False,"skipped: needs about 38.7 GiB of device memory (scaled from batch 256), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,384,1,oom,,,,,,,,,False,"skipped: needs about 29.0 GiB of device memory (scaled from batch 256), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,320,1,oom,,,,,,,,,False,"skipped: needs about 24.2 GiB of device memory (scaled from batch 256), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,288,1,ok,118.25347119817035,213.1676721292343,1351.0491395027202,1372.8683935005392,0.4432717667601926,18513.0,22306.0,9821.5,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,1,2,ok,42.84735533496837,42.29712379910114,23.642269501578994,24.076598754618317,0.005144534625360653,180.8,212.0,362.7,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,2,2,ok,78.80470598089397,77.55448977579297,25.788320002902765,27.610961247773957,0.004714021121577851,245.7,274.0,450.1,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,4,2,ok,138.4387646177203,149.86682364601762,26.690363501984393,35.65503474965226,0.00474085493873858,376.8,468.0,584.2,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,8,2,ok,175.51718012310886,173.6217345255172,46.07718049737741,50.11944024772674,0.003958820175778699,628.5,826.0,809.2,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,16,2,ok,192.13984793207894,189.41343454037175,84.47130499916966,91.83688025041192,0.0022582721606817647,1141.0,1488.0,1315.4,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,32,2,ok,186.9249764908194,208.5661486913952,153.42854150003404,171.3113615005568,0.09622735617506258,2161.0,2828.0,1858.8,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,64,2,ok,208.40741692930686,215.97726364259773,296.3274879984965,349.2784947502514,0.0008376966666289269,4204.0,5518.0,3188.8,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,128,2,ok,200.09939005100816,213.0257545011858,600.8663144966704,710.924497250744,0.0004515538782337216,8292.0,10896.0,6149.3,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,256,2,ok,198.94827797757318,200.5605001620991,1276.4228240012017,1393.0752497471985,0.00019632649271111337,16468.0,21650.0,11502.0,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,512,2,oom,,,,,,,,,False,"skipped: needs about 38.7 GiB of device memory (scaled from batch 288), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,384,2,oom,,,,,,,,,False,"skipped: needs about 29.0 GiB of device memory (scaled from batch 288), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,320,2,oom,,,,,,,,,False,"skipped: needs about 24.2 GiB of device memory (scaled from batch 288), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,288,2,ok,197.8549293257946,194.79771655725003,1478.456755499792,1539.5622559954063,0.0001718033436998794,18512.0,24340.0,11352.1,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,1,4,ok,44.1465590380373,44.946786707480236,22.248531502555124,24.61045950076368,0.004581651284443533,180.8,212.0,466.9,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,2,4,ok,83.36546094888729,82.58859924365994,24.216417499701492,25.596510000468697,0.0044332866083427605,245.7,274.0,615.9,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,4,4,ok,149.44177914749773,151.66892312660073,26.373233999038348,33.54945750288607,0.004763048058952466,376.8,468.0,864.0,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,8,4,ok,185.3814650534223,179.53028054315044,44.56072800530819,47.967839003831614,0.0034373720970429238,628.5,826.0,1083.6,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,16,4,ok,202.36138408013008,202.9446739513682,78.83922099790652,86.00751250560279,0.0019644128578041598,1141.0,1488.0,1981.7,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,32,4,ok,214.74365278831618,217.78160463699476,146.93619350146037,156.86180699594843,0.0014370972323692593,2161.0,2828.0,3067.4,True,
+dfine-small,ustc-community/dfine-small-coco,object-detection,64,4,ok,208.88299785880818,216.22021665165198,295.9945235052146,364.4953927487222,0.000773905997176365,4204.0,5518.0,5650.4,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,128,4,ok,202.5388230191256,203.55104498566908,628.8348949965439,697.0966147509898,0.00031437457080228773,8292.0,10896.0,10383.8,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,256,4,ok,206.18503478567416,212.09789332878216,1206.9898289992125,1338.9217074964108,0.0001675711984304366,16468.0,21650.0,20110.5,False,
+dfine-small,ustc-community/dfine-small-coco,object-detection,512,4,oom,,,,,,,,,False,"skipped: needs about 42.2 GiB of device memory (scaled from batch 288), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,384,4,oom,,,,,,,,,False,"skipped: needs about 31.7 GiB of device memory (scaled from batch 288), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,320,4,oom,,,,,,,,,False,"skipped: needs about 26.4 GiB of device memory (scaled from batch 288), more than the 23.9 GiB budget"
+dfine-small,ustc-community/dfine-small-coco,object-detection,288,4,ok,205.35009563286164,212.76905663448892,1353.5802835031063,1528.6415074970137,0.00014996363737985427,18512.0,24340.0,21219.1,False,

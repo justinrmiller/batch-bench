@@ -1,0 +1,34 @@
+model,model_id,task,batch_size,num_workers,status,samples_per_second,compute_samples_per_second,latency_p50_ms,latency_p95_ms,data_wait_fraction,peak_allocated_mib,peak_reserved_mib,peak_host_mib,recommended,error
+detr-resnet-50,facebook/detr-resnet-50,object-detection,1,1,ok,36.47831581533284,36.91116449228694,27.09207400403102,27.465036497233086,0.006164981264799603,451.0,604.0,662.3,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,2,1,ok,44.434114438578234,52.501214290154955,38.09435699804453,44.87534849977237,0.10505355776210151,665.1,826.0,460.9,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,4,1,ok,35.81253155898001,49.13407156408894,81.40990299943951,83.27809199727199,0.26609386629919846,1089.2,1322.0,652.6,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,8,1,ok,32.85416423732554,51.162697891109445,156.36391999942134,157.09416324898484,0.3564451784123189,1942.7,2556.0,1072.7,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,16,1,ok,33.1428372808262,62.07716189748443,257.74374199681915,258.41494075029914,0.46548942437090773,3641.5,4818.0,1951.0,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,32,1,ok,33.74022809072448,63.1743556468356,506.53464799688663,506.836562002718,0.46605965980264,7044.1,9600.0,3699.8,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,64,1,ok,35.640182766107905,63.74805912782767,1003.9521340040665,1004.7464702511206,0.4408918139060113,13849.6,18594.0,7340.5,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,128,1,oom,,,,,,,,,False,"skipped: needs about 36.1 GiB of device memory (scaled from batch 64), more than the 23.9 GiB budget"
+detr-resnet-50,facebook/detr-resnet-50,object-detection,96,1,oom,,,,,,,,,False,"skipped: needs about 27.2 GiB of device memory (scaled from batch 64), more than the 23.9 GiB budget"
+detr-resnet-50,facebook/detr-resnet-50,object-detection,80,1,ok,34.244617612416064,63.786299262102695,1254.1878259980876,1255.271553998682,0.46303452207065104,17251.0,22928.0,9536.2,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,88,1,oom,,,,,,,,,False,"skipped: needs about 24.6 GiB of device memory (scaled from batch 80), more than the 23.9 GiB budget"
+detr-resnet-50,facebook/detr-resnet-50,object-detection,1,2,ok,43.51705170970883,44.46145144747728,22.491393498057732,23.691301754297456,0.006933909111256691,516.6,642.0,442.6,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,2,2,ok,50.745219877426806,52.646594315869564,37.98916199593805,44.22508725474472,0.004724605146557482,665.1,838.0,639.1,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,4,2,ok,58.314456958991634,58.7231809943336,68.11620100052096,69.11789050354855,0.0029488190276933633,1089.7,1160.0,972.4,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,8,2,ok,56.517487310681645,60.56067015253638,132.09893450402888,161.0638452511921,0.0013939614343271504,1943.5,2376.0,1342.8,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,16,2,ok,57.19592547585476,61.91045634924029,258.4377655002754,274.78233975125477,0.06381891806410721,3640.9,5298.0,2301.9,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,32,2,ok,56.7057604770249,63.00483981535589,507.89748999886797,514.7452487526607,0.09812073322951947,7043.2,10212.0,4336.1,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,64,2,ok,57.66169548929344,58.05240290983355,1102.4522120023903,1192.1258384973044,0.011696905971405765,13849.6,20116.0,9005.8,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,128,2,oom,,,,,,,,,False,"skipped: needs about 35.7 GiB of device memory (scaled from batch 80), more than the 23.9 GiB budget"
+detr-resnet-50,facebook/detr-resnet-50,object-detection,96,2,oom,,,,,,,,,False,"skipped: needs about 26.8 GiB of device memory (scaled from batch 80), more than the 23.9 GiB budget"
+detr-resnet-50,facebook/detr-resnet-50,object-detection,80,2,ok,58.45125612823799,63.58815665277158,1258.0959129991243,1315.533660002984,0.07124716327779354,17251.0,21024.0,11342.8,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,88,2,oom,,,,,,,,,False,"skipped: needs about 24.6 GiB of device memory (scaled from batch 80), more than the 23.9 GiB budget"
+detr-resnet-50,facebook/detr-resnet-50,object-detection,1,4,ok,44.20885924061397,44.79006548887172,22.326379501464544,23.261296999407932,0.005464281296910869,516.6,628.0,653.2,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,2,4,ok,50.91351073397378,53.04355568677366,37.704862996179145,47.44057024799986,0.0038346337975908897,665.1,838.0,855.4,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,4,4,ok,55.26112180407801,53.819696188178156,74.3222329983837,79.71094400090806,0.001964674493495251,1089.7,1160.0,1318.6,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,8,4,ok,60.69702420707804,61.447442043214714,130.19256349798525,136.9646949988237,0.0013977405607667598,1943.5,2376.0,2211.8,True,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,16,4,ok,61.89947160693561,62.48352350996761,256.06750549923163,270.162528999208,0.0006752180570497243,3640.9,5298.0,4264.1,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,32,4,ok,61.61720009220993,63.289849347392746,505.6103044953488,595.8602069968038,0.00034348062895346587,7043.2,10212.0,8606.6,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,64,4,ok,60.947743155614866,63.687434078806895,1004.9078114971053,1189.2198067489517,0.00018617630940433942,13849.6,20116.0,16195.7,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,128,4,oom,,,,,,,,,False,"skipped: needs about 35.7 GiB of device memory (scaled from batch 80), more than the 23.9 GiB budget"
+detr-resnet-50,facebook/detr-resnet-50,object-detection,96,4,oom,,,,,,,,,False,"skipped: needs about 26.8 GiB of device memory (scaled from batch 80), more than the 23.9 GiB budget"
+detr-resnet-50,facebook/detr-resnet-50,object-detection,80,4,ok,63.69733974614599,63.72810907002247,1255.3330259979703,1260.7814127495658,0.00017649005192132934,17251.0,21024.0,24720.9,False,
+detr-resnet-50,facebook/detr-resnet-50,object-detection,88,4,oom,,,,,,,,,False,"skipped: needs about 24.6 GiB of device memory (scaled from batch 80), more than the 23.9 GiB budget"
